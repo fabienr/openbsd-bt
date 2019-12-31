@@ -18,8 +18,8 @@ MAN=	aac.4 abcrtc.4 ac97.4 acphy.4 acrtc.4 \
 	auacer.4 audio.4 aue.4 auglx.4 auich.4 auixp.4 autri.4 auvia.4 \
 	axe.4 axen.4 axppmic.4 azalia.4 \
 	bce.4 bcmaux.4 bcmdog.4  bcmrng.4 bcmtemp.4 berkwdt.4 bge.4 \
-	bgw.4 bio.4 bpe.4 bktr.4 bmtphy.4 bnx.4 bnxt.4 \
-	boca.4 bpf.4 brgphy.4 bridge.4 brswphy.4 bwfm.4 bwi.4 bytgpio.4 \
+	bgw.4 bio.4 bpe.4 bktr.4 bmtphy.4 bnx.4 bnxt.4 boca.4 \
+	bpf.4 brgphy.4 bridge.4 brswphy.4 bt.4 bthci.4 bwfm.4 bwi.4 bytgpio.4 \
 	cac.4 cas.4 cardbus.4 carp.4 ccp.4 ccpmic.4 cd.4 cdce.4 cfxga.4 \
 	ch.4 chvgpio.4 ciphy.4 ciss.4 clcs.4 clct.4 cmpci.4 \
 	com.4 cue.4 cy.4 cz.4 \
@@ -76,7 +76,7 @@ MAN=	aac.4 abcrtc.4 ac97.4 acphy.4 acrtc.4 \
 	tlphy.4 thmc.4 tpm.4 tpmr.4 tqphy.4 trm.4 trunk.4 tsl.4 tty.4 \
 	tun.4 tap.4 twe.4 \
 	txp.4 txphy.4 uaudio.4 uark.4 uath.4 ubcmtp.4 uberry.4 ubsa.4 \
-	ubsec.4 ucom.4 uchcom.4 ucrcom.4 ucycom.4 ukspan.4 uslhcom.4 \
+	ubsec.4 ubt.4 ucom.4 uchcom.4 ucrcom.4 ucycom.4 ukspan.4 uslhcom.4 \
 	udav.4 udcf.4 udl.4 udp.4 udsbr.4 \
 	uftdi.4 ugen.4 ugl.4 ugold.4 uguru.4 uhci.4 uhid.4 uhidev.4 uipaq.4 \
 	uk.4 ukbd.4 \

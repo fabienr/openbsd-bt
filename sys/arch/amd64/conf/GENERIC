@@ -199,6 +199,10 @@ cardslot*	at cbb?
 cardbus*	at cardslot?
 pcmcia*		at cardslot?
 
+# Bluetooth transports
+bthci*	at uhub?		# USB Bluetooth
+#bt*	at bthci?		# BT Devices
+
 # USB Controllers
 xhci*	at pci?			# eXtensible Host Controller
 ehci*	at pci?			# Enhanced Host Controller
