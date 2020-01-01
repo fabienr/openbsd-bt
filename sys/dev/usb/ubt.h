@@ -21,3 +21,6 @@
 #define UBT_ACL_IN	(UE_DIR_IN  | 2)
 #define UBT_SCO_OUT	(UE_DIR_OUT | 3)
 #define UBT_SCO_IN	(UE_DIR_IN  | 3)
+
+#define UBT_TIMEOUT	1000
+#define UBT_CMD_TIMEOUT	UBT_TIMEOUT

@@ -17,20 +17,17 @@
 #include <sys/types.h>
 #include <sys/device.h>
 
-/* bt hci cmd packet, header 3, data max 255, total 258 bytes */ 
+/* bt hci cmd packet, header 3, data max 255, total 258 bytes */
+struct bt_cmd_head {
+	u_int16_t	op;
+	u_int8_t	len;
+};
 struct bt_cmd {
-	union {
-		struct {
-			u_int8_t ocf;
-			u_int8_t ogf;
-		} u;
-		u_int16_t code;
-	}		op;
-	u_int8_t	length;
-	u_int8_t	data[255];
+	struct bt_cmd_head	head;
+	u_int8_t		data[255];
 };
 
-/* bt hci acl packet, header 4, data max 27, total 31 bytes
+/* bt hci asynchronous packet, header 4, data max 27, total 31 bytes
  * h_f :
  * - 12 bits handle, identification of logical link
  * - 02 bits pb : Packet Boundary flag
@@ -47,11 +44,11 @@ struct bt_cmd {
 #define BT_ACL_BC_ASB		0x1	/* active slave broadcast */
 struct bt_acl {
 	u_int16_t	h_f;
-	u_int16_t	length;
+	u_int16_t	len;
 	u_int8_t	data[27];
 };
 
-/* bt hci sco packet, header 3, data max 28, total 31 bytes
+/* bt hci sychronous packet, header 3, data max 28, total 31 bytes
  * h_f :
  * - 12 bits handle, identification of logical link
  * - 02 bits ps : Packet Status, from host 0x00, from controller it depends on
@@ -70,22 +67,28 @@ struct bt_sco {
 	u_int8_t	data[28];
 };
 
-/* bt hci evt packet, header 2, data max 255, total 257 bytes */
+/* bt hci event packet, header 2, data max 255, total 257 bytes */
+struct bt_evt_head {
+	u_int8_t	op;
+	u_int8_t	len;
+};
 struct bt_evt {
-	u_int8_t	code;
-	u_int8_t	length;
-	u_int8_t	data[255];
+	struct bt_evt_head	head;
+	u_int8_t		data[255];
 };
 
 struct bthci_softc;
 
 struct bthci_ops {
-	void		(*cmd)(struct bthci_softc *, struct bt_cmd *);
-	void		(*acl)(struct bthci_softc *, struct bt_acl *);
-	void		(*sco)(struct bthci_softc *, struct bt_sco *);
+	void		(*cmd)(struct bthci_softc *, const struct bt_cmd *);
+	void		(*acl)(struct bthci_softc *, const struct bt_acl *);
+	void		(*sco)(struct bthci_softc *, const struct bt_sco *);
 };
 
 struct bthci_softc {
-	struct device sc_dev;
-	struct bthci_ops ops;
+	struct device		 sc_dev;
+	struct bthci_ops	 ops;
+	void			*priv;
 };
+
+int bthci_attach(struct bthci_softc *, void *);

@@ -38,6 +38,7 @@ struct ubt_softc {
 	struct usbd_device	*sc_udev;
 	struct usbd_interface	*sc_iface0;
 	struct usbd_pipe	*ctrl_cmd_pipe;
+	struct usbd_xfer	*ctrl_cmd_xfer;
 	struct usbd_pipe	*intr_evt_pipe;
 	uint8_t			*ibuf;
 	size_t			 ibuflen;
@@ -60,15 +61,13 @@ void	ubt_attach(struct device *, struct device *, void *);
 int	ubt_detach(struct device *, int);
 int	ubt_open_pipes(struct ubt_softc *);
 void	ubt_close_pipes(struct ubt_softc *);
+int	ubt_malloc_xfer(struct ubt_softc *);
+void	ubt_free_xfer(struct ubt_softc *);
 
-void	ubt_cmd(struct bthci_softc *, struct bt_cmd *);
+void	ubt_cmd(struct bthci_softc *, const struct bt_cmd *);
 void	ubt_intr(struct usbd_xfer *, void *, usbd_status);
-void	ubt_acl(struct bthci_softc *, struct bt_acl *);
-void	ubt_sco(struct bthci_softc *, struct bt_sco *);
-
-struct cfdriver ubt_cd = {
-    NULL, "ubt", DV_DULL
-};
+void	ubt_acl(struct bthci_softc *, const struct bt_acl *);
+void	ubt_sco(struct bthci_softc *, const struct bt_sco *);
 
 struct cfattach ubt_ca = {
     sizeof(struct ubt_softc), ubt_match, ubt_attach, ubt_detach
@@ -281,11 +280,16 @@ ubt_attach(struct device *parent, struct device *self, void *aux)
 		goto fail;
 	}
 
+	if (ubt_open_pipes(usc) != 0)
+		goto fail;
+
+	if (ubt_malloc_xfer(usc) != 0)
+		goto fail;
+
 	sc->ops.cmd = ubt_cmd;
 	sc->ops.acl = ubt_acl;
 	sc->ops.sco = ubt_sco;
-
-	if (ubt_open_pipes(usc) != 0)
+	if (bthci_attach(sc, usc) != 0)
 		goto fail;
 
 	return;
@@ -298,11 +302,12 @@ ubt_detach(struct device *self, int flags)
 {
 	struct ubt_softc *usc = (struct ubt_softc *)self;
 	/*struct bthci_softc *sc = &usc->sc_sc;*/
-	DPRINTF(("%s: ubt_detach\n", DEVNAME(usc)));
-	usbd_ref_wait(usc->sc_udev);
 
-	/* Abort and close Tx/Rx pipes. */
+	DPRINTF(("%s: ubt_detach\n", DEVNAME(usc)));
+
+	usbd_ref_wait(usc->sc_udev);
 	ubt_close_pipes(usc);
+	ubt_free_xfer(usc);
 
 	return (0);
 }
@@ -311,7 +316,7 @@ int
 ubt_open_pipes(struct ubt_softc *usc)
 {
 	usb_endpoint_descriptor_t *ed;
-	usbd_status err;
+	usbd_status err = USBD_NORMAL_COMPLETION;
 	int isize;
 
 	/* interface 0 :
@@ -328,9 +333,9 @@ ubt_open_pipes(struct ubt_softc *usc)
 	if (usc->ctrl_cmd_pipe == NULL) {
 		printf("%s: invalid ctrl cmd pipe\n",
 		    DEVNAME(usc));
+		err = USBD_NOT_STARTED;
 		goto fail;
 	}
-	DPRINTF(("%s: ctrl_cmd_pipe ok\n", DEVNAME(usc)));
 
 	ed = usbd_get_endpoint_descriptor(usc->sc_iface0, UBT_EVT_IN);
 	if (ed == NULL) {
@@ -354,51 +359,42 @@ ubt_open_pipes(struct ubt_softc *usc)
 	err = usbd_open_pipe_intr(usc->sc_iface0, UBT_EVT_IN,
 	    USBD_SHORT_XFER_OK, &usc->intr_evt_pipe, usc, usc->ibuf, isize,
 	    ubt_intr, USBD_DEFAULT_INTERVAL);
-	if (err != 0) {
+	if (err != USBD_NORMAL_COMPLETION) {
 		printf("%s: could not open intr evt pipe, err=%s\n",
 		    DEVNAME(usc), usbd_errstr(err));
 		goto fail;
 	}
-	DPRINTF(("%s: intr_evt_pipe ok\n", DEVNAME(usc)));
 
-	err = usbd_open_pipe(usc->sc_iface0, UBT_ACL_OUT, 0,
-	    &usc->tx_acl_pipe);
-	if (err != 0) {
+	err = usbd_open_pipe(usc->sc_iface0, UBT_ACL_OUT, 0, &usc->tx_acl_pipe);
+	if (err != USBD_NORMAL_COMPLETION) {
 		printf("%s: could not open Tx acl bulk pipe, err=%s\n",
 		    DEVNAME(usc), usbd_errstr(err));
 		goto fail;
 	}
-	DPRINTF(("%s: tx_acl_pipe ok\n", DEVNAME(usc)));
 
-	err = usbd_open_pipe(usc->sc_iface0, UBT_ACL_IN, 0,
-	    &usc->rx_acl_pipe);
-	if (err != 0) {
+	err = usbd_open_pipe(usc->sc_iface0, UBT_ACL_IN, 0, &usc->rx_acl_pipe);
+	if (err != USBD_NORMAL_COMPLETION) {
 		printf("%s: could not open Rx acl bulk pipe, err=%s\n",
 		    DEVNAME(usc), usbd_errstr(err));
 		goto fail;
 	}
-	DPRINTF(("%s: rx_acl_pipe ok\n", DEVNAME(usc)));
 
-	err = usbd_open_pipe(usc->sc_iface1, UBT_SCO_OUT, 0,
-	    &usc->tx_sco_pipe);
-	if (err != 0) {
+	err = usbd_open_pipe(usc->sc_iface1, UBT_SCO_OUT, 0, &usc->tx_sco_pipe);
+	if (err != USBD_NORMAL_COMPLETION) {
 		printf("%s: could not open Tx sco bulk pipe, err=%s\n",
 		    DEVNAME(usc), usbd_errstr(err));
 		goto fail;
 	}
-	DPRINTF(("%s: tx_sco_pipe ok\n", DEVNAME(usc)));
 
-	err = usbd_open_pipe(usc->sc_iface1, UBT_SCO_IN, 0,
-	    &usc->rx_sco_pipe);
-	if (err != 0) {
+	err = usbd_open_pipe(usc->sc_iface1, UBT_SCO_IN, 0, &usc->rx_sco_pipe);
+	if (err != USBD_NORMAL_COMPLETION) {
 		printf("%s: could not open Rx sco bulk pipe, err=%s\n",
 		    DEVNAME(usc), usbd_errstr(err));
 		goto fail;
 	}
-	DPRINTF(("%s: rx_sco_pipe ok\n", DEVNAME(usc)));
 
-	fail:
-	if (err != 0)
+ fail:
+	if (err != USBD_NORMAL_COMPLETION)
 		ubt_close_pipes(usc);
 	return (err);
 }
@@ -436,9 +432,66 @@ ubt_close_pipes(struct ubt_softc *usc)
 	}
 }
 
-void
-ubt_cmd(struct bthci_softc *sc, struct bt_cmd *pkt)
+int
+ubt_malloc_xfer(struct ubt_softc *usc)
 {
+	void *buffer;
+	usbd_status err = USBD_NORMAL_COMPLETION;
+	usc->ctrl_cmd_xfer = usbd_alloc_xfer(usc->sc_udev);
+	if (usc->ctrl_cmd_xfer == NULL) {
+		err = USBD_NOMEM;
+		goto fail;
+	}
+	buffer = usbd_alloc_buffer(usc->ctrl_cmd_xfer, sizeof(struct bt_cmd));
+	if (buffer == NULL) {
+		err = USBD_NOMEM;
+		goto fail;
+	}
+ fail:
+	if (err != USBD_NORMAL_COMPLETION)
+		ubt_free_xfer(usc);
+	return (err);
+}
+
+void
+ubt_free_xfer(struct ubt_softc *usc)
+{
+	if (usc->ctrl_cmd_xfer != NULL) {
+		usbd_free_xfer(usc->ctrl_cmd_xfer);
+		usc->ctrl_cmd_xfer = NULL;
+	}
+}
+
+void
+ubt_cmd(struct bthci_softc *sc, const struct bt_cmd *pkt)
+{
+	struct ubt_softc	*usc;
+	size_t			 len;
+	usb_device_request_t	 req;
+	usbd_status		 err;
+
+	usc = (struct ubt_softc *)sc->priv;
+	len = pkt->head.len + sizeof(pkt->head);
+	memset(&req, 0, sizeof(req));
+	req.bmRequestType = UT_WRITE_CLASS_DEVICE;
+	USETW(req.wLength, len);
+	usbd_setup_default_xfer(usc->ctrl_cmd_xfer,
+	    usc->sc_udev,
+	    NULL,
+	    UBT_CMD_TIMEOUT,
+	    &req,
+	    (void*)pkt,
+	    len,
+	    USBD_FORCE_SHORT_XFER|USBD_SYNCHRONOUS,
+	    NULL);
+
+	DPRINTF(("%s: ubt_cmd pkt(%02x, %u)\n",
+	    DEVNAME(usc),  pkt->head.op, pkt->head.len));
+	err = usbd_transfer(usc->ctrl_cmd_xfer);
+
+	if (err != USBD_NORMAL_COMPLETION)
+		printf("%s: ubt_cmd, usbd_transfer, err=%s\n",
+		    DEVNAME(usc), usbd_errstr(err));
 	return;
 }
 
@@ -446,21 +499,50 @@ void
 ubt_intr(struct usbd_xfer *xfer, void *priv,
     usbd_status status)
 {
-	/*
-	struct ubt_softc *usc = priv;
-	uint8_t *buf = usc->ibuf;
-	*/
+	struct ubt_softc	*usc = priv;
+	uint8_t			*buf = usc->ibuf;
+	int			 len;
+	struct bt_evt		*pkt;
+
+	if (status != USBD_NORMAL_COMPLETION)
+		return;
+	DPRINTF(("%s: ubt_intr, status=%s\n",
+	    DEVNAME(usc), usbd_errstr(status)));
+	if (usbd_is_dying(usc->sc_udev))
+		return;
+
+	usbd_get_xfer_status(xfer, NULL, NULL, &len, NULL);
+	if (len < sizeof(struct bt_evt_head)) {
+		printf("%s: invalid interrupt, len %d < minimum %zu\n",
+		    DEVNAME(usc), len, sizeof(struct bt_evt_head));
+		return;
+	}
+	pkt = (struct bt_evt *)buf;
+	len -= sizeof(struct bt_evt_head);
+	if (len != pkt->head.len) {
+		printf("%s: invalid interrupt, len mismatch %d != %d\n",
+		    DEVNAME(usc), len, pkt->head.len);
+		return;
+	}
+
+	/* XXX */
+	printf("%s: %02x, %d -> \n", DEVNAME(usc), pkt->head.op, pkt->head.len);
+	for (len = 0; len < pkt->head.len; len++) {
+		printf("%02x ", pkt->data[len]);
+	}
+	printf("\n");
+
 	return;
 }
 
 void
-ubt_acl(struct bthci_softc *sc, struct bt_acl *pkt)
+ubt_acl(struct bthci_softc *sc, const struct bt_acl *pkt)
 {
 	return;
 }
 
 void
-ubt_sco(struct bthci_softc *sc, struct bt_sco *pkt)
+ubt_sco(struct bthci_softc *sc, const struct bt_sco *pkt)
 {
 	return;
 }
