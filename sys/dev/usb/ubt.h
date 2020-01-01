@@ -15,7 +15,7 @@
  */
 
 /* USB endpoints addresses. */
-#define UBT_CMD_OUT	(UE_DIR_OUT | 0)
+#define UBT_CMD_OUT	(UE_DIR_OUT | 0) /* default_pipe, handle by usbd */
 #define UBT_EVT_IN	(UE_DIR_IN  | 1)
 #define UBT_ACL_OUT	(UE_DIR_OUT | 2)
 #define UBT_ACL_IN	(UE_DIR_IN  | 2)
