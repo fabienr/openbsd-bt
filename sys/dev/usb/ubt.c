@@ -407,7 +407,7 @@ void
 ubt_close_pipes(struct ubt_softc *usc)
 {
 	if (usc->ctrl_cmd_pipe != NULL) {
-		usbd_close_pipe(usc->ctrl_cmd_pipe);
+		usbd_abort_pipe(usc->ctrl_cmd_pipe);
 		usc->ctrl_cmd_pipe = NULL;
 	}
 	if (usc->intr_evt_pipe != NULL) {
