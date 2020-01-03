@@ -19,12 +19,12 @@
 
 /* bt hci cmd packet, header 3, data max 255, total 258 bytes */
 struct bt_cmd_head {
-	u_int16_t	op;
-	u_int8_t	len;
+	uint16_t	op;
+	uint8_t		len;
 };
 struct bt_cmd {
 	struct bt_cmd_head	head;
-	u_int8_t		data[255];
+	uint8_t			data[255];
 };
 
 /* bt hci asynchronous packet, header 4, data max 27, total 31 bytes
@@ -42,10 +42,13 @@ struct bt_cmd {
 #define BT_ACL_PB_AMP		0x3	/* complete auto-flushable packet(AMP) */
 #define BT_ACL_BC_P2P		0x0	/* only point to point */
 #define BT_ACL_BC_ASB		0x1	/* active slave broadcast */
+struct bt_acl_head {
+	uint16_t	h_f;
+	uint16_t	len;
+};
 struct bt_acl {
-	u_int16_t	h_f;
-	u_int16_t	len;
-	u_int8_t	data[27];
+	struct bt_acl_head	head;
+	uint8_t			data[27];
 };
 
 /* bt hci sychronous packet, header 3, data max 28, total 31 bytes
@@ -61,34 +64,46 @@ struct bt_acl {
 #define BT_SCO_PS_ERR		0x1	/* possibly invalid data */ 
 #define BT_SCO_PS_EMPTY		0x2	/* no data received, length=0 */
 #define BT_SCO_PS_LOST		0x3	/* data lost, on missing pkt length=0 */
+struct bt_sco_head {
+	uint16_t	h_f;
+	uint8_t		len;
+};
 struct bt_sco {
-	u_int16_t	h_f;
-	u_int8_t	length;
-	u_int8_t	data[28];
+	struct bt_sco_head	head;
+	uint8_t			data[28];
 };
 
 /* bt hci event packet, header 2, data max 255, total 257 bytes */
 struct bt_evt_head {
-	u_int8_t	op;
-	u_int8_t	len;
+	uint8_t		op;
+	uint8_t		len;
 };
 struct bt_evt {
 	struct bt_evt_head	head;
-	u_int8_t		data[255];
+	uint8_t			data[255];
 };
 
 struct bthci_softc;
-
 struct bthci_ops {
-	void		(*cmd)(struct bthci_softc *, const struct bt_cmd *);
-	void		(*acl)(struct bthci_softc *, const struct bt_acl *);
-	void		(*sco)(struct bthci_softc *, const struct bt_sco *);
+	int (*cmd)(struct bthci_softc *, const struct bt_cmd *);
+	int (*acl)(struct bthci_softc *, const struct bt_acl *);
+	int (*sco)(struct bthci_softc *, const struct bt_sco *);
 };
-
 struct bthci_softc {
 	struct device		 sc_dev;
 	struct bthci_ops	 ops;
 	void			*priv;
+	struct bt_cmd		 cmd;
+	struct bt_evt		 evt;
 };
 
 int bthci_attach(struct bthci_softc *, void *);
+void bthci_detach(struct bthci_softc *);
+
+int bthci_lm_inquiry(struct bthci_softc *, int, int);
+
+int bthci_cb_reset(struct bthci_softc *);
+
+int bthci_info_version(struct bthci_softc *);
+int bthci_info_buffer(struct bthci_softc *);
+int bthci_info_bdaddr(struct bthci_softc *);
