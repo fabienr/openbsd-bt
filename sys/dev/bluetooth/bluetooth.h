@@ -38,21 +38,21 @@ void bluetooth_attach(struct bluetooth_softc *,  struct bthci *);
 struct bt_cmd_head {
 	uint16_t	op;
 	uint8_t		len;
-};
+} __packed;
 struct bt_cmd {
 	struct bt_cmd_head	head;
 	uint8_t			data[255];
-};
+} __packed;
 
 /* bt hci event packet, header 2, data max 255, total 257 bytes */
 struct bt_evt_head {
 	uint8_t		op;
 	uint8_t		len;
-};
+} __packed;
 struct bt_evt {
 	struct bt_evt_head	head;
 	uint8_t			data[255];
-};
+} __packed;
 
 /* bt hci asynchronous packet, header 4, data max 27, total 31 bytes
  * h_f :
@@ -72,11 +72,11 @@ struct bt_evt {
 struct bt_acl_head {
 	uint16_t	h_f;
 	uint16_t	len;
-};
+} __packed;
 struct bt_acl {
 	struct bt_acl_head	head;
 	uint8_t			data[27];
-};
+} __packed;
 
 /* bt hci sychronous packet, header 3, data max 28, total 31 bytes
  * h_f :
@@ -94,11 +94,11 @@ struct bt_acl {
 struct bt_sco_head {
 	uint16_t	h_f;
 	uint8_t		len;
-};
+} __packed;
 struct bt_sco {
 	struct bt_sco_head	head;
 	uint8_t			data[28];
-};
+} __packed;
 
 #define BTERR_UNKNOW_HCI_COMMAND	0x01
 #define BTERR_UNKNOW_CONN_ID		0x02

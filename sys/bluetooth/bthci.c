@@ -18,6 +18,7 @@
 #define BTHCI_DEBUG
 
 #include <sys/types.h>
+#include <sys/param.h>
 #include <sys/errno.h>
 #include <machine/intr.h>
 #include <sys/time.h>
@@ -40,11 +41,11 @@
 #define HCI_EVTS_POOLSIZE		32
 #ifdef BTHCI_DEBUG
 #define DUMP_BTHCI_EVT(hci, evt) do {						\
-	DPRINTF(("%s: event head(op=%02x, len=%d)",				\
+	DPRINTF(("%s: event head(op=%02X, len=%d), data",			\
 	    DEVNAME(hci), evt->head.op, evt->head.len));			\
 	for (int i = 0; i < evt->head.len; i++)					\
 		DPRINTF((" %02x", evt->data[i]));				\
-	DPRINTF(("]\n"));							\
+	DPRINTF(("\n"));							\
 } while(0)
 #else
 #define DUMP_BTHCI_EVT(hci, evt)
@@ -121,16 +122,17 @@
 struct hci_cmd_complete {
 	uint8_t			buff_sz;
 	uint16_t		op;
-};
+} __packed;
 struct bthci_evt_complete {
 	struct bt_evt_head	head;
 	struct hci_cmd_complete	event;
 	/* evt_head + cmd_complete = 5 */
-	uint8_t			data[sizeof(struct bt_evt)-5];
-};
+	uint8_t			data[sizeof(struct bt_evt) - 5];
+} __packed;
 #ifdef BTHCI_DEBUG
 #define DUMP_BTHCI_EVT_COMPLETE(hci, evt) do {					\
-	DPRINTF(("%s: event head(op=%02X, len=%d), event(buff_sz=%d, op=%04X)",	\
+	DPRINTF(("%s: command complete head(op=%02X, len=%d), "			\
+	    "event(buff_sz=%d, op=%04x), data",					\
 	    DEVNAME(hci), (evt)->head.op, (evt)->head.len,			\
 	    (evt)->event.buff_sz, (evt)->event.op));				\
 	for (int i = 0;								\
@@ -146,14 +148,14 @@ struct hci_cmd_state {
 	uint8_t			state;
 	uint8_t			buff_sz;
 	uint16_t		op;
-};
+} __packed;
 struct bthci_evt_state {
 	struct bt_evt_head	head;
 	struct hci_cmd_state	event;
-};
+} __packed;
 #ifdef BTHCI_DEBUG
 #define DUMP_BTHCI_EVT_STATE(hci, evt) do {					\
-	DPRINTF(("%s: event head(op=%02X, len=%d), "				\
+	DPRINTF(("%s: command state head(op=%02X, len=%d), "			\
 	    "event(state=%02X, buff_sz=%d, op=%04X)\n",				\
 	    DEVNAME(hci), (evt)->head.op, (evt)->head.len,			\
 	    (evt)->event.state, (evt)->event.buff_sz, (evt)->event.op));	\
@@ -204,6 +206,8 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 	struct bthci_evt_complete *cmd_complete;
 	struct bthci_evt_state *cmd_state;
 
+	/* XXX debug */
+	DUMP_BTHCI_EVT(hci, evt);
 	if (evt->head.op == HCI_EVENT_COMMAND_COMPL) {
 		if (evt->head.len < sizeof(struct hci_cmd_complete)) {
 			printf("%s: invalid command complete event, short len\n",
@@ -223,6 +227,7 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 		if (cmd_complete->event.op == hci->cmd.head.op) {
 			hci->cmd_complete = cmd_complete;
 			wakeup(hci);
+			return;
 		}
 		printf("%s: unexpected command complete event, drop\n",
 		    DEVNAME(hci));
@@ -343,8 +348,9 @@ bthci_cb_reset(struct bthci *hci)
 	if (hci->cmd_complete) {
 		if (hci->cmd_complete->head.len !=
 		    sizeof(struct hci_cmd_complete) + 1) {
-			printf("%s: invalid event parameter len\n",
-			    DEVNAME(hci));
+			printf("%s: invalid event parameter len %d != %d\n",
+			    DEVNAME(hci), hci->cmd_complete->head.len,
+			    (int)(sizeof(struct hci_cmd_complete) + 1));
 			err = BTERR_UNKNOW; /* XXX proper error code */
 		} else
 			err = hci->cmd_complete->data[0];
@@ -466,7 +472,8 @@ bthci_cmd(struct bthci *hci)
 	mtx_enter(&hci->mtx);
 	if (err)
 		return (err);
-	err = msleep_nsec(hci, &hci->mtx, 0, "bthci", BT_TIMEOUT);
+	if (hci->cmd_complete == NULL && hci->cmd_state == NULL)
+		err = msleep_nsec(hci, &hci->mtx, MAXPRI, "bthci", BT_TIMEOUT);
 	return (err);
 }
 

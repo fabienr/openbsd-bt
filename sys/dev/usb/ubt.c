@@ -520,8 +520,7 @@ ubt_evt(struct usbd_xfer *xfer, void *priv, usbd_status status)
 		    DEVNAME(usc), len, sizeof(struct bt_evt_head));
 		return;
 	}
-	len -= sizeof(struct bt_evt_head);
-	if (len != pkt->head.len) {
+	if (len - sizeof(struct bt_evt_head) != pkt->head.len) {
 		printf("%s: invalid interrupt, len mismatch %d != %d\n",
 		    DEVNAME(usc), len, pkt->head.len);
 		return;
@@ -531,7 +530,7 @@ ubt_evt(struct usbd_xfer *xfer, void *priv, usbd_status status)
 		    DEVNAME(usc));
 		return;
 	}
-	memcpy(evt, &usc->rx_evt_buf, sizeof(struct bt_evt));
+	memcpy(evt, &usc->rx_evt_buf, len);
 	bthci_write_evt(&usc->hci, evt);
 	return;
 }
