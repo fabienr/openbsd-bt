@@ -162,6 +162,10 @@ struct bthci_evt_state {
 #define DUMP_BTHCI_EVT_STATE(hci, evt)
 #endif /* BTHCI_DEBUG */
 
+int bthci_enter(struct bthci *);
+int bthci_cmd(struct bthci *);
+void bthci_leave(struct bthci *);
+
 void
 bthci_init(struct bthci *hci, struct device *sc, struct btbus *bus, int ipl)
 {
@@ -286,8 +290,7 @@ bthci_lc_inquiry(struct bthci *hci, int timeout, int limit)
 		uint8_t timeout;
 		uint8_t limit;
 	} * inquiry;
-	mtx_enter(&hci->mtx);
-
+	bthci_enter(hci);
 	if (timeout * 100 / 128 > 0x30 || timeout < 0) {
 		printf("%s: bthci_inquiry invalid timeout 0 > %d > 0x30\n",
 		    DEVNAME(hci), timeout);
@@ -298,7 +301,11 @@ bthci_lc_inquiry(struct bthci *hci, int timeout, int limit)
 		    DEVNAME(hci), timeout);
 		return (EINVAL);
 	}
-
+	if (hci->cmd.head.op != 0) {
+		printf("%s: bthci command pending, return\n",
+		    DEVNAME(hci));
+		return (EBUSY);
+	}
 	hci->cmd.head.op = htole16(HCI_LC_INQUIRY);
 	hci->cmd.head.len = sizeof(struct hci_lc_inquiry);
 	inquiry = (struct hci_lc_inquiry *)&hci->cmd.data;
@@ -307,10 +314,8 @@ bthci_lc_inquiry(struct bthci *hci, int timeout, int limit)
 	inquiry->lap[2] = HCI_INQUIRY_LAP_2;
 	inquiry->timeout = timeout * 100 / 128;
 	inquiry->limit = limit;
-	err = hci->bus->cmd(hci->sc, &hci->cmd);
-
-	hci->cmd.head.op = 0;
-	mtx_leave(&hci->mtx);
+	err = bthci_cmd(hci);
+	bthci_leave(hci);
 	return (err);
 }
 
@@ -322,13 +327,10 @@ int
 bthci_cb_reset(struct bthci *hci)
 {
 	int err;
-	mtx_enter(&hci->mtx);
-
+	bthci_enter(hci);
 	hci->cmd.head.op = htole16(HCI_CB_RESET);
 	hci->cmd.head.len = 0;
-	if ((err = hci->bus->cmd(hci->sc, &hci->cmd)))
-		goto fail;
-	if ((err = msleep_nsec(hci, &hci->mtx, 0, "bthci", BT_TIMEOUT)))
+	if ((err = bthci_cmd(hci)))
 		goto fail;
 	if (hci->cmd_state) {
 		if (hci->cmd_state->event.state)
@@ -349,8 +351,7 @@ bthci_cb_reset(struct bthci *hci)
 		hci->cmd_complete = NULL;
 	}
  fail:
-	hci->cmd.head.op = 0;
-	mtx_leave(&hci->mtx);
+	bthci_leave(hci);
 	return (err);
 }
 
@@ -369,14 +370,11 @@ int
 bthci_info_version(struct bthci *hci)
 {
 	int err;
-	mtx_enter(&hci->mtx);
-
+	bthci_enter(hci);
 	hci->cmd.head.op = htole16(HCI_INFO_VERSION);
 	hci->cmd.head.len = 0;
-	err = hci->bus->cmd(hci->sc, &hci->cmd);
-
-	hci->cmd.head.op = 0;
-	mtx_leave(&hci->mtx);
+	err = bthci_cmd(hci);
+	bthci_leave(hci);
 	return (err);
 }
 
@@ -385,14 +383,11 @@ int
 bthci_info_commands(struct bthci *hci)
 {
 	int err;
-	mtx_enter(&hci->mtx);
-
+	bthci_enter(hci);
 	hci->cmd.head.op = htole16(HCI_INFO_COMMANDS);
 	hci->cmd.head.len = 0;
-	err = hci->bus->cmd(hci->sc, &hci->cmd);
-
-	hci->cmd.head.op = 0;
-	mtx_leave(&hci->mtx);
+	err = bthci_cmd(hci);
+	bthci_leave(hci);
 	return (err);
 }
 
@@ -401,13 +396,11 @@ int
 bthci_info_features(struct bthci *hci)
 {
 	int err;
-	mtx_enter(&hci->mtx);
-
+	bthci_enter(hci);
 	hci->cmd.head.op = htole16(HCI_INFO_FEATURES);
 	hci->cmd.head.len = 0;
-	err = hci->bus->cmd(hci->sc, &hci->cmd);
-
-	mtx_leave(&hci->mtx);
+	err = bthci_cmd(hci);
+	bthci_leave(hci);
 	return (err);
 }
 
@@ -416,14 +409,11 @@ int
 bthci_info_extended_features(struct bthci *hci)
 {
 	int err;
-	mtx_enter(&hci->mtx);
-
+	bthci_enter(hci);
 	hci->cmd.head.op = htole16(HCI_INFO_FEATURES_E);
 	hci->cmd.head.len = 0;
-	err = hci->bus->cmd(hci->sc, &hci->cmd);
-
-	hci->cmd.head.op = 0;
-	mtx_leave(&hci->mtx);
+	err = bthci_cmd(hci);
+	bthci_leave(hci);
 	return (err);
 }
 
@@ -433,13 +423,10 @@ bthci_info_buffer(struct bthci *hci)
 {
 	int err;
 	mtx_enter(&hci->mtx);
-
 	hci->cmd.head.op = htole16(HCI_INFO_BUFFER);
 	hci->cmd.head.len = 0;
-	err = hci->bus->cmd(hci->sc, &hci->cmd);
-
-	hci->cmd.head.op = 0;
-	mtx_leave(&hci->mtx);
+	err = bthci_cmd(hci);
+	bthci_leave(hci);
 	return (err);
 }
 
@@ -448,13 +435,43 @@ int
 bthci_info_bdaddr(struct bthci *hci)
 {
 	int err;
-	mtx_enter(&hci->mtx);
-
+	bthci_enter(hci);
 	hci->cmd.head.op = htole16(HCI_INFO_BDADDR);
 	hci->cmd.head.len = 0;
-	err = hci->bus->cmd(hci->sc, &hci->cmd);
+	err = bthci_cmd(hci);
+	bthci_leave(hci);
+	return (err);
+}
 
+int
+bthci_enter(struct bthci *hci)
+{
+	mtx_enter(&hci->mtx);
+	if (hci->cmd.head.op != 0) {
+		printf("%s: bthci locked, err=EBUSY\n",
+		    DEVNAME(hci));
+		mtx_leave(&hci->mtx);
+		return (EBUSY);
+	}
+	return (0);
+}
+
+int
+bthci_cmd(struct bthci *hci)
+{
+	int err;
+	mtx_leave(&hci->mtx);
+	err = hci->bus->cmd(hci->sc, &hci->cmd);
+	mtx_enter(&hci->mtx);
+	if (err)
+		return (err);
+	err = msleep_nsec(hci, &hci->mtx, 0, "bthci", BT_TIMEOUT);
+	return (err);
+}
+
+void
+bthci_leave(struct bthci *hci)
+{
 	hci->cmd.head.op = 0;
 	mtx_leave(&hci->mtx);
-	return (err);
 }
