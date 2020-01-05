@@ -189,7 +189,7 @@ bthci_destroy(struct bthci *hci)
 struct bt_evt *
 bthci_pool_get(struct bthci *hci)
 {
-	return ((struct bt_evt*)pool_get(&hci->evts, PR_NOWAIT));
+	return ((struct bt_evt*)pool_get(&hci->evts, PR_NOWAIT|PR_ZERO));
 }
 
 void
@@ -255,7 +255,8 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 		return;
 	}
 	DUMP_BTHCI_EVT(hci, evt);
-	SIMPLEQ_INSERT_TAIL(&hci->fifo, (struct bthci_evt *)evt, fifo);
+	/* XXX SIMPLEQ_INSERT_TAIL(&hci->fifo, (struct bthci_evt *)evt, fifo); */
+	pool_put(&hci->evts, evt);
 }
 
 struct bt_evt *
