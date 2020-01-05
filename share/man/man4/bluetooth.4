@@ -15,23 +15,24 @@
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
 .Dd $Mdocdate$
-.Dt BTHCI 4
+.Dt BLUETOOTH 4
 .Os
 .Sh NAME
-.Nm bthci
-.Nd Bluetooth Host Controller Interface 
+.Nm bluetooth
+.Nd introduction to Bluetooth support
 .Sh SYNOPSIS
-.Cd "bthci* at uhub?"
-.Cd "bt* at bthci?"
+.Cd "bluetooth* at uhub?"
 .Sh DESCRIPTION
+.Ox
+provides machine-independent bus support and drivers for Bluetooth (BT) devices.
+.Pp
 The
+.Ox
 .Nm
-driver provides support for the Bluetooth Host Controller Interface, which
-provide an interface to
-.Xr bt 4
-devices.
+driver has four layers :
+the bus (abstracted), the controller engine (HCI), the host, and the device layer.
 .Sh SEE ALSO
-.Xr bt 4
+.Xr bthci 9
 .Sh HISTORY
 The
 .Nm
