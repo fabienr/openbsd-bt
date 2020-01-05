@@ -28,8 +28,6 @@
 #include <sys/mutex.h>
 #include <dev/bluetooth/bluetooth.h>
 
-#include <lib/libsa/saerrno.h>
-
 #include "bthci.h"
 
 #ifdef BTHCI_DEBUG
@@ -167,16 +165,14 @@ struct bthci_evt_state {
 void
 bthci_init(struct bthci *hci, struct device *sc, struct btbus *bus, int ipl)
 {
-	int err;
-
 	hci->sc = sc;
 	hci->bus = bus;
 	mtx_init(&hci->mtx, ipl);
 	pool_init(&hci->evts, sizeof(struct bthci_evt), 0, ipl, 0,
 	    "bthci", NULL);
-	if ((err = pool_prime(&hci->evts, HCI_EVTS_POOLSIZE)))
-		printf("%s: pool_prime fail, err=%s",
-		    DEVNAME(hci), strerror(err));
+	if (pool_prime(&hci->evts, HCI_EVTS_POOLSIZE))
+		printf("%s: pool_prime fail, err=ENOMEM",
+		    DEVNAME(hci));
 	SIMPLEQ_INIT(&hci->fifo);
 }
 
