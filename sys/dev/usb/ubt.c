@@ -531,6 +531,7 @@ ubt_evt(struct usbd_xfer *xfer, void *priv, usbd_status status)
 		    DEVNAME(usc));
 		return;
 	}
+	memcpy(evt, &usc->rx_evt_buf, sizeof(struct bt_evt));
 	bthci_write_evt(&usc->hci, evt);
 	return;
 }
