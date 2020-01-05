@@ -444,13 +444,14 @@ define	pcmciabus {[controller = -1], [socket = -1]}	# PCMCIA attachment
 define	cbbus {[slot = -1]}		# CardBus attachment
 define	pcmciaslot {[slot = -1]}	# PCMCIA slot itself
 define	sdmmcbus {}			# SD/MMC attachment
-define	btbus {}			# Bluetooth host controller
+define	btbus {}			# Bluetooth attachment
 define	agpbus {}			# AGP bridge
 device	virtio {}			# VirtIO
 
-# HCI BT controller
-device	bthci: btbus
-file	dev/ic/bthci.c			bthci
+# Bluetooth (BT) controller
+device	bluetooth
+file	dev/bluetooth/bluetooth.c	bluetooth
+file	bluetooth/bthci.c		bluetooth
 
 # UHCI USB controller
 device	uhci: usbus

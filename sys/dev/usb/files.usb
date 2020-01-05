@@ -26,7 +26,7 @@ attach	uhub at uhub with uhub_uhub
 define	ucombus {[portno = -1]}
 
 # Bluetooth devices
-attach	bthci at uhub with ubt
+attach	bluetooth at uhub with ubt
 file	dev/usb/ubt.c			ubt
 
 # Audio devices

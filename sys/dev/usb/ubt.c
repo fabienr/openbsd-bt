@@ -18,36 +18,52 @@
 #define UBT_DEBUG
 
 #include <sys/types.h>
-#include <sys/malloc.h>
+#include <sys/errno.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/errno.h>
+#include <sys/time.h>
+#include <sys/pool.h>
 #include <machine/bus.h>
+#include <machine/intr.h>
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
 #include <dev/usb/usbdi_util.h>
 #include <dev/usb/usbdivar.h>
 #include <dev/usb/usbdevs.h>
-#include <dev/ic/bthci.h>
+#include <dev/bluetooth/bluetooth.h>
+#include <bluetooth/bthci.h>
 
 #include "ubt.h"
 
 struct ubt_softc {
-	struct bthci_softc	 sc_sc;
+	struct bluetooth_softc	 sc_sc;
+	struct bthci		 hci;
 
 	/* USB specific goo. */
 	struct usbd_device	*sc_udev;
 	struct usbd_interface	*sc_iface0;
-	struct usbd_pipe	*intr_evt_pipe;
-	uint8_t			*ibuf;
-	size_t			 ibuflen;
+	struct usbd_pipe	*tx_cmd_pipe;
+	struct usbd_xfer	*tx_cmd_xfer;
+	struct usbd_pipe	*rx_evt_pipe;
+	struct bt_evt		 rx_evt_buf;
 	struct usbd_pipe	*tx_acl_pipe;
+	struct usbd_xfer	*tx_acl_xfer;
 	struct usbd_pipe	*rx_acl_pipe;
 	struct usbd_xfer	*rx_acl_xfer;
 	struct usbd_interface	*sc_iface1;
 	struct usbd_pipe	*tx_sco_pipe;
+	struct usbd_xfer	*tx_sco_xfer;
 	struct usbd_pipe	*rx_sco_pipe;
 	struct usbd_xfer	*rx_sco_xfer;
+};
+
+int	ubt_cmd(struct device *, const struct bt_cmd *);
+int	ubt_acl(struct device *, const struct bt_acl *);
+int	ubt_sco(struct device *, const struct bt_sco *);
+static struct btbus ubt_bus = {
+	.cmd = ubt_cmd,
+	.acl = ubt_acl,
+	.sco = ubt_sco,
 };
 
 #ifdef UBT_DEBUG
@@ -65,11 +81,7 @@ void	ubt_close_pipes(struct ubt_softc *);
 int	ubt_malloc_xfers(struct ubt_softc *);
 void	ubt_free_xfers(struct ubt_softc *);
 
-int	ubt_cmd(struct bthci_softc *, const struct bt_cmd *);
-int	ubt_acl(struct bthci_softc *, const struct bt_acl *);
-int	ubt_sco(struct bthci_softc *, const struct bt_sco *);
-
-static void	ubt_int(struct usbd_xfer *, void *, usbd_status);
+static void	ubt_evt(struct usbd_xfer *, void *, usbd_status);
 static int	ubt_rx_acl_start(struct ubt_softc *);
 static void	ubt_rx_acl(struct usbd_xfer *, void *, usbd_status);
 static int	ubt_rx_sco_start(struct ubt_softc *);
@@ -92,132 +104,72 @@ static const struct ubt_devno {
 	int			proto;
 	int			match;
 } ubt_dev[] = {
-	{   /* ignore Broadcom 2033 without firmware */
-	    USB_VENDOR_BROADCOM,
-	    USB_PRODUCT_BROADCOM_BCM2033NF,
-	    -1,
-	    -1,
-	    -1,
-	    UMATCH_NONE
-	},
-	{   /* Apple Bluetooth Host Controller MacbookPro 7,1 */
-	    USB_VENDOR_APPLE,
-	    USB_PRODUCT_APPLE_BLUETOOTH_HOST_1,
-	    -1,
-	    -1,
-	    -1,
+	{    /* ignore Broadcom 2033 without firmware */
+	    USB_VENDOR_BROADCOM, USB_PRODUCT_BROADCOM_BCM2033NF,
+	    -1, -1, -1, UMATCH_NONE
+	}, { /* Apple Bluetooth Host Controller MacbookPro 7,1 */
+	    USB_VENDOR_APPLE, USB_PRODUCT_APPLE_BLUETOOTH_HOST_1,
+	    -1, -1, -1,
 	    UMATCH_VENDOR_PRODUCT
-	},
-	{   /* Apple Bluetooth Host Controller iMac 11,1 */
-	    USB_VENDOR_APPLE,
-	    USB_PRODUCT_APPLE_BLUETOOTH_HOST_2,
-	    -1,
-	    -1,
-	    -1,
+	}, { /* Apple Bluetooth Host Controller iMac 11,1 */
+	    USB_VENDOR_APPLE, USB_PRODUCT_APPLE_BLUETOOTH_HOST_2,
+	    -1, -1, -1,
 	    UMATCH_VENDOR_PRODUCT
-	},
-	{   /* Apple Bluetooth Host Controller MacBookPro 8,2 */
-	    USB_VENDOR_APPLE,
-	    USB_PRODUCT_APPLE_BLUETOOTH_HOST_3,
-	    -1,
-	    -1,
-	    -1,
+	}, { /* Apple Bluetooth Host Controller MacBookPro 8,2 */
+	    USB_VENDOR_APPLE, USB_PRODUCT_APPLE_BLUETOOTH_HOST_3,
+	    -1, -1, -1,
 	    UMATCH_VENDOR_PRODUCT
-	},
-	{   /* Apple Bluetooth Host Controller MacBookAir 3,1 3,2*/
-	    USB_VENDOR_APPLE,
-	    USB_PRODUCT_APPLE_BLUETOOTH_HOST_4,
-	    -1,
-	    -1,
-	    -1,
+	}, { /* Apple Bluetooth Host Controller MacBookAir 3,1 3,2*/
+	    USB_VENDOR_APPLE, USB_PRODUCT_APPLE_BLUETOOTH_HOST_4,
+	    -1, -1, -1,
 	    UMATCH_VENDOR_PRODUCT
-	},
-	{   /* Apple Bluetooth Host Controller MacBookAir 4,1 */
-	    USB_VENDOR_APPLE,
-	    USB_PRODUCT_APPLE_BLUETOOTH_HOST_5,
-	    -1,
-	    -1,
-	    -1,
+	}, { /* Apple Bluetooth Host Controller MacBookAir 4,1 */
+	    USB_VENDOR_APPLE, USB_PRODUCT_APPLE_BLUETOOTH_HOST_5,
+	    -1, -1, -1,
 	    UMATCH_VENDOR_PRODUCT
-	},
-	{   /* Apple Bluetooth Host Controller MacMini 5,1 */
-	    USB_VENDOR_APPLE,
-	    USB_PRODUCT_APPLE_BLUETOOTH_HOST_6,
-	    -1,
-	    -1,
-	    -1,
+	}, { /* Apple Bluetooth Host Controller MacMini 5,1 */
+	    USB_VENDOR_APPLE, USB_PRODUCT_APPLE_BLUETOOTH_HOST_6,
+	    -1, -1, -1,
 	    UMATCH_VENDOR_PRODUCT
-	},
-	{   /* Apple Bluetooth Host Controller MacBookAir 6,1 */
-	    USB_VENDOR_APPLE,
-	    USB_PRODUCT_APPLE_BLUETOOTH_HOST_7,
-	    -1,
-	    -1,
-	    -1,
+	}, { /* Apple Bluetooth Host Controller MacBookAir 6,1 */
+	    USB_VENDOR_APPLE, USB_PRODUCT_APPLE_BLUETOOTH_HOST_7,
+	    -1, -1, -1,
 	    UMATCH_VENDOR_PRODUCT
-	},
-	{   /* Apple Bluetooth Host Controller MacBookPro 9,2 */
-	    USB_VENDOR_APPLE,
-	    USB_PRODUCT_APPLE_BLUETOOTH_HOST_8,
-	    -1,
-	    -1,
-	    -1,
+	}, { /* Apple Bluetooth Host Controller MacBookPro 9,2 */
+	    USB_VENDOR_APPLE, USB_PRODUCT_APPLE_BLUETOOTH_HOST_8,
+	    -1, -1, -1,
 	    UMATCH_VENDOR_PRODUCT
-	},
-	{   /* Broadcom chips with PatchRAM support */
-	    USB_VENDOR_BROADCOM,
-	    -1,
-	    UDCLASS_VENDOR,
-	    UDSUBCLASS_RF,
-	    UDPROTO_BLUETOOTH,
+	}, { /* Broadcom chips with PatchRAM support */
+	    USB_VENDOR_BROADCOM, -1,
+	    UDCLASS_VENDOR, UDSUBCLASS_RF, UDPROTO_BLUETOOTH,
 	    UMATCH_VENDOR_DEVCLASS_DEVPROTO
-	},
-	{   /* Broadcom based device with PatchRAM support */
-	    USB_VENDOR_FOXCONN,
-	    -1,
-	    UDCLASS_VENDOR,
-	    UDSUBCLASS_RF,
-	    UDPROTO_BLUETOOTH,
+	}, { /* Broadcom based device with PatchRAM support */
+	    USB_VENDOR_FOXCONN, -1,
+	    UDCLASS_VENDOR, UDSUBCLASS_RF, UDPROTO_BLUETOOTH,
 	    UMATCH_VENDOR_DEVCLASS_DEVPROTO
-	},
-	{   /* Broadcom based device with PatchRAM support */
-	    USB_VENDOR_LITEON,
-	    -1,
-	    UDCLASS_VENDOR,
-	    UDSUBCLASS_RF,
-	    UDPROTO_BLUETOOTH,
+	}, { /* Broadcom based device with PatchRAM support */
+	    USB_VENDOR_LITEON, -1,
+	    UDCLASS_VENDOR, UDSUBCLASS_RF, UDPROTO_BLUETOOTH,
 	    UMATCH_VENDOR_DEVCLASS_DEVPROTO
-	},
-	{   /* Broadcom based device with PatchRAM support */
-	    USB_VENDOR_BELKIN,
-	    -1,
-	    UDCLASS_VENDOR,
-	    UDSUBCLASS_RF,
-	    UDPROTO_BLUETOOTH,
+	}, { /* Broadcom based device with PatchRAM support */
+	    USB_VENDOR_BELKIN, -1,
+	    UDCLASS_VENDOR, UDSUBCLASS_RF, UDPROTO_BLUETOOTH,
 	    UMATCH_VENDOR_DEVCLASS_DEVPROTO
-	},
-	{   /* Broadcom based device with PatchRAM support */
-	    USB_VENDOR_TOSHIBA,
-	    -1,
-	    UDCLASS_VENDOR,
-	    UDSUBCLASS_RF,
-	    UDPROTO_BLUETOOTH,
+	}, { /* Broadcom based device with PatchRAM support */
+	    USB_VENDOR_TOSHIBA, -1,
+	    UDCLASS_VENDOR, UDSUBCLASS_RF, UDPROTO_BLUETOOTH,
 	    UMATCH_VENDOR_DEVCLASS_DEVPROTO
-	},
-	{   /* Broadcom based device with PatchRAM support */
-	    USB_VENDOR_ASUSTEK,
-	    -1,
-	    UDCLASS_VENDOR,
-	    UDSUBCLASS_RF,
-	    UDPROTO_BLUETOOTH,
+	}, { /* Broadcom based device with PatchRAM support */
+	    USB_VENDOR_ASUSTEK, -1,
+	    UDCLASS_VENDOR, UDSUBCLASS_RF, UDPROTO_BLUETOOTH,
 	    UMATCH_VENDOR_DEVCLASS_DEVPROTO
-	},
-	{   /* Generic Bluetooth SIG compliant devices */
-	    -1,
-	    -1,
-	    UDCLASS_WIRELESS,
-	    UDSUBCLASS_RF,
-	    UDPROTO_BLUETOOTH,
+	}, { /* Asus based device with PatchRAM support */
+	    USB_VENDOR_ASUS, -1,
+	    UDCLASS_VENDOR, UDSUBCLASS_RF, UDPROTO_BLUETOOTH,
+	    UMATCH_VENDOR_DEVCLASS_DEVPROTO
+	}, { /* Generic Bluetooth SIG compliant devices */
+	    -1, -1,
+	    UDCLASS_WIRELESS, UDSUBCLASS_RF, UDPROTO_BLUETOOTH,
 	    UMATCH_DEVCLASS_DEVSUBCLASS_DEVPROTO
 	},
 };
@@ -260,7 +212,6 @@ void
 ubt_attach(struct device *parent, struct device *self, void *aux)
 {
 	struct ubt_softc *usc = (struct ubt_softc *)self;
-	struct bthci_softc *sc = &usc->sc_sc;
 	struct usb_attach_arg *uaa = aux;
 	usbd_status err;
 
@@ -292,22 +243,19 @@ ubt_attach(struct device *parent, struct device *self, void *aux)
 	if (ubt_malloc_xfers(usc) != 0)
 		goto fail;
 
+	/*
 	if (ubt_rx_acl_start(usc) != 0)
 		goto fail;
 
-	/*if (ubt_rx_sco_start(usc) != 0)
-		goto fail;*/
-
-	sc->ops.cmd = ubt_cmd;
-	sc->ops.acl = ubt_acl;
-	sc->ops.sco = ubt_sco;
-	if (bthci_attach(sc, usc) != 0)
+	if (ubt_rx_sco_start(usc) != 0)
 		goto fail;
+	*/
 
+	bthci_init(&usc->hci, (struct device *)usc, &ubt_bus, IPL_SOFTUSB);
+	bluetooth_attach(&usc->sc_sc, &usc->hci);
 	return;
  fail:
 	usbd_deactivate(usc->sc_udev);
-	bthci_detach(sc);
 	ubt_close_pipes(usc);
 	ubt_free_xfers(usc);
 }
@@ -316,12 +264,10 @@ int
 ubt_detach(struct device *self, int flags)
 {
 	struct ubt_softc *usc = (struct ubt_softc *)self;
-	struct bthci_softc *sc = &usc->sc_sc;
-
 	DPRINTF(("%s: ubt_detach\n", DEVNAME(usc)));
 
 	usbd_ref_wait(usc->sc_udev);
-	bthci_detach(sc);
+	bthci_destroy(&usc->hci);
 	ubt_close_pipes(usc);
 	ubt_free_xfers(usc);
 
@@ -331,9 +277,7 @@ ubt_detach(struct device *self, int flags)
 int
 ubt_open_pipes(struct ubt_softc *usc)
 {
-	usb_endpoint_descriptor_t *ed;
 	usbd_status err = USBD_NORMAL_COMPLETION;
-	int isize;
 
 	/* interface 0 :
 	 * - ctrl cmd pipe at UBT_CMD_OUT, default_pipe, pipe address 0x00
@@ -344,34 +288,22 @@ ubt_open_pipes(struct ubt_softc *usc)
 	 * - tx sco pipe at UBT_SCO_OUT
 	 * - rx sco pipe at UBT_SCO_IN
 	 */
-
-	ed = usbd_get_endpoint_descriptor(usc->sc_iface0, UBT_EVT_IN);
-	if (ed == NULL) {
-		printf("%s: could not retrieve intr evt pipe descriptor\n",
+	usc->tx_cmd_pipe = usc->sc_udev->default_pipe;
+	if (usc->tx_cmd_pipe) {
+		printf("%s: invalid default _pipe\n",
 		    DEVNAME(usc));
 		goto fail;
 	}
-	isize = UGETW(ed->wMaxPacketSize);
-	if (isize == 0) {
-		printf("%s: invalid intr evt pipe descriptor\n",
-		    DEVNAME(usc));
-		goto fail;
-	}
-	usc->ibuf = malloc(isize, M_USBDEV, M_NOWAIT);
-	if (usc->ibuf == NULL) {
-		printf("%s: could not allocate Rx intr buffer\n",
-		    DEVNAME(usc));
-		goto fail;
-	}
-	usc->ibuflen = isize;
 	err = usbd_open_pipe_intr(usc->sc_iface0, UBT_EVT_IN,
-	    USBD_SHORT_XFER_OK, &usc->intr_evt_pipe, usc, usc->ibuf, isize,
-	    ubt_int, USBD_DEFAULT_INTERVAL);
+	    USBD_SHORT_XFER_OK, &usc->rx_evt_pipe, usc,
+	    &usc->rx_evt_buf, sizeof(usc->rx_evt_buf),
+	    ubt_evt, USBD_DEFAULT_INTERVAL);
 	if (err != USBD_NORMAL_COMPLETION) {
 		printf("%s: could not open intr evt pipe, err=%s\n",
 		    DEVNAME(usc), usbd_errstr(err));
 		goto fail;
 	}
+	/* XXX
 	err = usbd_open_pipe(usc->sc_iface0, UBT_ACL_OUT, USBD_EXCLUSIVE_USE,
 	    &usc->tx_acl_pipe);
 	if (err != USBD_NORMAL_COMPLETION) {
@@ -386,7 +318,6 @@ ubt_open_pipes(struct ubt_softc *usc)
 		    DEVNAME(usc), usbd_errstr(err));
 		goto fail;
 	}
-	/*
 	err = usbd_open_pipe(usc->sc_iface1, UBT_SCO_OUT, USBD_EXCLUSIVE_USE,
 	    &usc->tx_sco_pipe);
 	if (err != USBD_NORMAL_COMPLETION) {
@@ -412,13 +343,13 @@ ubt_open_pipes(struct ubt_softc *usc)
 void
 ubt_close_pipes(struct ubt_softc *usc)
 {
-	if (usc->intr_evt_pipe != NULL) {
-		usbd_close_pipe(usc->intr_evt_pipe);
-		usc->intr_evt_pipe = NULL;
+	if (usc->tx_cmd_pipe) {
+		usbd_abort_pipe(usc->tx_cmd_pipe);
+		usc->tx_cmd_pipe = NULL;
 	}
-	if (usc->ibuf != NULL) {
-		free(usc->ibuf, M_USBDEV, usc->ibuflen);
-		usc->ibuf = NULL;
+	if (usc->rx_evt_pipe != NULL) {
+		usbd_close_pipe(usc->rx_evt_pipe);
+		usc->rx_evt_pipe = NULL;
 	}
 	if (usc->tx_acl_pipe != NULL) {
 		usbd_close_pipe(usc->tx_acl_pipe);
@@ -441,19 +372,49 @@ ubt_close_pipes(struct ubt_softc *usc)
 int
 ubt_malloc_xfers(struct ubt_softc *usc)
 {
-	void *buffer;
 	usbd_status err = USBD_NORMAL_COMPLETION;
+	void *buffer;
+	usc->tx_cmd_xfer = usbd_alloc_xfer(usc->sc_udev);
+	if (usc->tx_cmd_xfer == NULL) {
+		err = USBD_NOMEM;
+		goto fail;
+	}
+	buffer = usbd_alloc_buffer(usc->tx_cmd_xfer, sizeof(struct bt_cmd));
+	if (buffer == NULL) {
+		err = USBD_NOMEM;
+		goto fail;
+	}
+	/* XXX
+	usc->tx_acl_xfer = usbd_alloc_xfer(usc->sc_udev);
+	if (usc->tx_acl_xfer == NULL) {
+		err = USBD_NOMEM;
+		goto fail;
+	}
+	buffer = usbd_alloc_buffer(usc->tx_acl_xfer, sizeof(struct bt_acl));
+	if (buffer == NULL) {
+		err = USBD_NOMEM;
+		goto fail;
+	}
 	usc->rx_acl_xfer = usbd_alloc_xfer(usc->sc_udev);
 	if (usc->rx_acl_xfer == NULL) {
 		err = USBD_NOMEM;
 		goto fail;
 	}
-	buffer = usbd_alloc_buffer(usc->rx_acl_xfer, sizeof(struct bt_acl)*100);
+	buffer = usbd_alloc_buffer(usc->rx_acl_xfer, sizeof(struct bt_acl));
 	if (buffer == NULL) {
 		err = USBD_NOMEM;
 		goto fail;
 	}
-	/*
+	usc->tx_sco_xfer = usbd_alloc_xfer(usc->sc_udev);
+	if (usc->tx_sco_xfer == NULL) {
+		err = USBD_NOMEM;
+		goto fail;
+	}
+	buffer = usbd_alloc_buffer(usc->tx_sco_xfer, sizeof(struct bt_sco));
+	if (buffer == NULL) {
+		err = USBD_NOMEM;
+		goto fail;
+	}
 	usc->rx_sco_xfer = usbd_alloc_xfer(usc->sc_udev);
 	if (usc->rx_sco_xfer == NULL) {
 		err = USBD_NOMEM;
@@ -474,9 +435,21 @@ ubt_malloc_xfers(struct ubt_softc *usc)
 void
 ubt_free_xfers(struct ubt_softc *usc)
 {
+	if (usc->tx_cmd_xfer != NULL) {
+		usbd_free_xfer(usc->tx_cmd_xfer);
+		usc->tx_cmd_xfer = NULL;
+	}
+	if (usc->tx_acl_xfer != NULL) {
+		usbd_free_xfer(usc->tx_acl_xfer);
+		usc->tx_acl_xfer = NULL;
+	}
 	if (usc->rx_acl_xfer != NULL) {
 		usbd_free_xfer(usc->rx_acl_xfer);
 		usc->rx_acl_xfer = NULL;
+	}
+	if (usc->tx_sco_xfer != NULL) {
+		usbd_free_xfer(usc->tx_sco_xfer);
+		usc->tx_sco_xfer = NULL;
 	}
 	if (usc->rx_sco_xfer != NULL) {
 		usbd_free_xfer(usc->rx_sco_xfer);
@@ -485,14 +458,14 @@ ubt_free_xfers(struct ubt_softc *usc)
 }
 
 int
-ubt_cmd(struct bthci_softc *sc, const struct bt_cmd *pkt)
+ubt_cmd(struct device *sc, const struct bt_cmd *pkt)
 {
 	struct ubt_softc	*usc;
 	usb_device_request_t	 req;
 	usbd_status		 err;
 	uint32_t		 len;
 
-	usc = (struct ubt_softc *)sc->priv;
+	usc = (struct ubt_softc *)sc;
 	memset(&req, 0, sizeof(req));
 	req.bmRequestType = UT_WRITE_CLASS_DEVICE;
 	USETW(req.wLength, pkt->head.len + sizeof(pkt->head));
@@ -512,28 +485,28 @@ ubt_cmd(struct bthci_softc *sc, const struct bt_cmd *pkt)
 		    DEVNAME(usc), usbd_errstr(err));
 		return (EIO);
 	}
+
 	return (0);
 }
 
 int
-ubt_acl(struct bthci_softc *sc, const struct bt_acl *pkt)
+ubt_acl(struct device *sc, const struct bt_acl *pkt)
 {
 	return (0);
 }
 
 int
-ubt_sco(struct bthci_softc *sc, const struct bt_sco *pkt)
+ubt_sco(struct device *sc, const struct bt_sco *pkt)
 {
 	return (0);
 }
 
 static void
-ubt_int(struct usbd_xfer *xfer, void *priv, usbd_status status)
+ubt_evt(struct usbd_xfer *xfer, void *priv, usbd_status status)
 {
 	struct ubt_softc	*usc = priv;
-	uint8_t			*buf = usc->ibuf;
+	struct bt_evt		*evt, *pkt = &usc->rx_evt_buf;
 	uint32_t		 len;
-	struct bt_evt		*pkt;
 
 	if (status != USBD_NORMAL_COMPLETION)
 		return;
@@ -546,22 +519,18 @@ ubt_int(struct usbd_xfer *xfer, void *priv, usbd_status status)
 		    DEVNAME(usc), len, sizeof(struct bt_evt_head));
 		return;
 	}
-	pkt = (struct bt_evt *)buf;
 	len -= sizeof(struct bt_evt_head);
 	if (len != pkt->head.len) {
 		printf("%s: invalid interrupt, len mismatch %d != %d\n",
 		    DEVNAME(usc), len, pkt->head.len);
 		return;
 	}
-
-	/* XXX */
-	printf("%s: ubt_int pkt(%02x, %d) -> [",
-	    DEVNAME(usc), pkt->head.op, pkt->head.len);
-	for (len = 0; len < pkt->head.len; len++) {
-		printf("%02x ", pkt->data[len]);
+	if ((evt = bthci_pool_get(&usc->hci)) == NULL) {
+		printf("%s: bthci pool empty\n",
+		    DEVNAME(usc));
+		return;
 	}
-	printf("]\n");
-
+	bthci_write_evt(&usc->hci, evt);
 	return;
 }
 
@@ -575,7 +544,7 @@ ubt_rx_acl_start(struct ubt_softc *usc)
 	    usc->rx_acl_pipe,
 	    usc,
 	    NULL,
-	    sizeof(struct bt_acl)*100,
+	    sizeof(struct bt_acl),
 	    USBD_SHORT_XFER_OK,
 	    USBD_NO_TIMEOUT,
 	    ubt_rx_acl);

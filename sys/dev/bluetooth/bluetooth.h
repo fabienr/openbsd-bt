@@ -14,8 +14,25 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <sys/types.h>
-#include <sys/device.h>
+#define BT_TIMEOUT	SEC_TO_NSEC(5)
+
+struct bt_cmd;
+struct bt_evt;
+struct bt_acl;
+struct bt_sco;
+struct bthci;
+struct btbus {
+	int (*cmd)(struct device *, const struct bt_cmd *);
+	int (*acl)(struct device *, const struct bt_acl *);
+	int (*sco)(struct device *, const struct bt_sco *);
+};
+
+struct bluetooth_softc {
+	struct device		 sc_dev;
+	struct bthci		*hci;
+};
+
+void bluetooth_attach(struct bluetooth_softc *,  struct bthci *);
 
 /* bt hci cmd packet, header 3, data max 255, total 258 bytes */
 struct bt_cmd_head {
@@ -24,6 +41,16 @@ struct bt_cmd_head {
 };
 struct bt_cmd {
 	struct bt_cmd_head	head;
+	uint8_t			data[255];
+};
+
+/* bt hci event packet, header 2, data max 255, total 257 bytes */
+struct bt_evt_head {
+	uint8_t		op;
+	uint8_t		len;
+};
+struct bt_evt {
+	struct bt_evt_head	head;
 	uint8_t			data[255];
 };
 
@@ -73,37 +100,35 @@ struct bt_sco {
 	uint8_t			data[28];
 };
 
-/* bt hci event packet, header 2, data max 255, total 257 bytes */
-struct bt_evt_head {
-	uint8_t		op;
-	uint8_t		len;
-};
-struct bt_evt {
-	struct bt_evt_head	head;
-	uint8_t			data[255];
-};
-
-struct bthci_softc;
-struct bthci_ops {
-	int (*cmd)(struct bthci_softc *, const struct bt_cmd *);
-	int (*acl)(struct bthci_softc *, const struct bt_acl *);
-	int (*sco)(struct bthci_softc *, const struct bt_sco *);
-};
-struct bthci_softc {
-	struct device		 sc_dev;
-	struct bthci_ops	 ops;
-	void			*priv;
-	struct bt_cmd		 cmd;
-	struct bt_evt		 evt;
-};
-
-int bthci_attach(struct bthci_softc *, void *);
-void bthci_detach(struct bthci_softc *);
-
-int bthci_lm_inquiry(struct bthci_softc *, int, int);
-
-int bthci_cb_reset(struct bthci_softc *);
-
-int bthci_info_version(struct bthci_softc *);
-int bthci_info_buffer(struct bthci_softc *);
-int bthci_info_bdaddr(struct bthci_softc *);
+#define BTERR_UNKNOW_HCI_COMMAND	0x01
+#define BTERR_UNKNOW_CONN_ID		0x02
+#define BTERR_HW_FAILURE		0x03
+#define BTERR_PAGE_TIMEOUT		0x04
+#define BTERR_AUTH_FAILURE		0x05
+#define BTERR_PIN_KEY_MISSING		0x06
+#define BTERR_NOMEM			0x07
+#define BTERR_CONN_TIMEOUT		0x08
+#define BTERR_CONN_LIMIT		0x09
+#define BTERR_SCO_LIMIT			0x0A
+#define BTERR_CONN_EXISTS		0x0B
+#define BTERR_COMMAND_DISALLOWED	0x0C
+#define BTERR_CONN_REJ_NOMEM		0x0D
+#define BTERR_CONN_REJ_SECU		0x0E
+#define BTERR_CONN_REJ_BDADDR		0x0F
+#define BTERR_CONN_ACC_TIMEOUT		0x10
+#define BTERR_UNSUPPORTED		0x11
+#define BTERR_INVALID_HCI_COMMAND	0x12
+#define BTERR_CONN_TERM_REMOTE		0x13
+#define BTERR_CONN_TERM_NOMEM		0x14
+#define BTERR_CONN_TERM_PWOFF		0x15
+#define BTERR_CONN_TERM_HOST		0x16
+#define BTERR_REPEATED_ATTEMPS		0x17
+#define BTERR_PAIRING_DISALLOWED	0x18
+#define BTERR_LMP_UNKNOW_PDU		0x19
+#define BTERR_LMP_UNSUPPORTED		0x1A
+#define BTERR_SCO_OFFSET_REJ		0x1B
+#define BTERR_SCO_INTERVAL_REJ		0x1C
+#define BTERR_SCO_MODE_REJ		0x1D
+#define BTERR_LMPLL_INVALID		0x1E
+#define BTERR_UNKNOW			0x1F
+/* XXX ... */

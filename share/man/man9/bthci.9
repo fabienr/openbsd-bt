@@ -19,6 +19,7 @@
 .Os
 .Sh NAME
 .Nm bthci_init ,
+.Nm bthci_destroy ,
 .Nm bthci_pool_get ,
 .Nm bthci_pool_put ,
 .Nm bthci_read_evt ,
@@ -31,12 +32,18 @@
 .In bluetooth/bthci.h
 .Ft void
 .Fn bthci_init "struct bthci *hci" \
- "struct bttransport *transport" \
+ "struct device *sc" \
+ "struct btbus *bus" \
  "int ipl"
+.Ft void
+.Fn bthci_destroy "struct bthci *hci"
 .Ft struct bt_evt *
 .Fn bthci_pool_get "struct bthci *hci"
 .Ft void
 .Fn bthci_pool_put "struct bthci *hci" \
+ "struct bt_evt *evt"
+.Ft void
+.Fn bthci_write_evt "struct bthci *hci" \
  "struct bt_evt *evt"
 .Ft struct bt_evt *
 .Fn bthci_read_evt "struct bthci *hci"
@@ -59,14 +66,20 @@ The
 functions provide a way to manage the bluetooth's controler subsystem and
 implement asynchronous interrupt abstraction queue throught
 .Xr mutex 9 ,
-.Xr splx 9 ,
-.Xr pool 9 and
+.Xr pool 9 ,
+.Xr queue 3 and
 .Xr tsleep 9 .
 .Pp
 The
 .Nm bthci_init()
 function is used to initiate the bthci pointed by hci with the provided
-bttransport backend as transport and spl level as ipl.
+.Xr config_attach 9
+context as sc, the btbus transport backend as bus and spl level as ipl.
+.Pp
+The
+.Nm bthci_destroy()
+function detroys hci's ressources. The caller is responsible for cleaning all
+pending transactions before detroy.
 .Pp
 The
 .Nm bthci_pool_get()
@@ -76,6 +89,11 @@ functions provide access to the corresponding
 .Xr pool 9
 functions in order to queue interupt event bt_evt from transport to higher
 layer which will return theim later to the pool.
+.Pp
+The
+.Nm bthci_write_evt()
+function catch hci command events or queue theim for higher layer and wakeup the
+appropriate sleep handle.
 .Pp
 The
 .Nm bthci_read_evt()
@@ -96,7 +114,6 @@ event. Those functions sleep and must be called only from process context.
 .Sh SEE ALSO
 .Xr bluetooth 4
 .Xr mutex 9
-.Xr splx 9
 .Xr pool 9
 .Xr tsleep 9
 .Sh HISTORY
