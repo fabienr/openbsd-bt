@@ -289,8 +289,9 @@ ubt_open_pipes(struct ubt_softc *usc)
 	 * - rx sco pipe at UBT_SCO_IN
 	 */
 	usc->tx_cmd_pipe = usc->sc_udev->default_pipe;
-	if (usc->tx_cmd_pipe) {
-		printf("%s: invalid default _pipe\n",
+	if (usc->tx_cmd_pipe == NULL) {
+		err = USBD_NOT_STARTED; /* XXX better error code */
+		printf("%s: invalid default_pipe\n",
 		    DEVNAME(usc));
 		goto fail;
 	}
