@@ -30,7 +30,13 @@ The
 .Ox
 .Nm
 driver has four layers :
-the bus (abstracted), the controller engine (HCI), the host, and the device layer.
+the transport (abstracted), the kernel library, the host and the device layer.
+.Sh FILES
+.Bl -tag -width Pa
+.It Pa /dev/bluetoothN
+Bluetooth host controler of device unit
+.Pa N .
+.El
 .Sh SEE ALSO
 .Xr bthci 9
 .Sh HISTORY
