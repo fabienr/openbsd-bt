@@ -464,23 +464,14 @@ ubt_cmd(struct device *sc, const struct bt_cmd *pkt)
 	struct ubt_softc	*usc;
 	usb_device_request_t	 req;
 	usbd_status		 err;
-	uint32_t		 len;
 
 	usc = (struct ubt_softc *)sc;
 	memset(&req, 0, sizeof(req));
 	req.bmRequestType = UT_WRITE_CLASS_DEVICE;
 	USETW(req.wLength, pkt->head.len + sizeof(pkt->head));
 
-	/* XXX */
-	printf("%s: ubt_cmd pkt(%04x, %u) -> [",
-	    DEVNAME(usc),  pkt->head.op, pkt->head.len);
-	for (len = 0; len < pkt->head.len; len++) {
-		printf("%02x ", pkt->data[len]);
-	}
-	printf("]\n");
 	err = usbd_do_request_flags(usc->sc_udev, &req, (void*)pkt,
 	    USBD_FORCE_SHORT_XFER, NULL, USBD_DEFAULT_TIMEOUT);
-
 	if (err != USBD_NORMAL_COMPLETION) {
 		printf("%s: ubt_cmd, usbd_transfer, err=%s\n",
 		    DEVNAME(usc), usbd_errstr(err));
