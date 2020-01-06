@@ -30,9 +30,8 @@ struct bthci {
 	struct btbus			*bus;
 	struct mutex			 mtx;
 	struct bt_cmd			 cmd;
-	struct bthci_evt_complete	*cmd_complete;
-	struct bthci_evt_state		*cmd_state;
-	struct bt_evt			 evt;
+	uint8_t				 evt_filter;
+	struct bt_evt			*evt;
 	struct pool			 evts;
 	struct bthci_evts		 fifo;
 };

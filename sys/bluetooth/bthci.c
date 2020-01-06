@@ -38,96 +38,49 @@
 #endif
 #define DEVNAME(hci) ((hci)->sc->dv_xname)
 
-#define HCI_EVTS_POOLSIZE		32
+#define BTHCI_EVTS_POOLSIZE		32
 #ifdef BTHCI_DEBUG
+#define DUMP_BTHCI_CMD(hci, cmd) do {						\
+	DPRINTF(("%s: cmd head(op=%04X, len=%d), data",				\
+	    DEVNAME(hci), (cmd)->head.op, (cmd)->head.len));			\
+	for (int i = 0; i < (cmd)->head.len; i++)				\
+		DPRINTF((" %02x ", (cmd)->data[i]));				\
+	DPRINTF(("\n"));							\
+} while(0)
 #define DUMP_BTHCI_EVT(hci, evt) do {						\
 	DPRINTF(("%s: event head(op=%02X, len=%d), data",			\
-	    DEVNAME(hci), evt->head.op, evt->head.len));			\
-	for (int i = 0; i < evt->head.len; i++)					\
-		DPRINTF((" %02x", evt->data[i]));				\
+	    DEVNAME(hci), (evt)->head.op, (evt)->head.len));			\
+	for (int i = 0; i < (evt)->head.len; i++)				\
+		DPRINTF((" %02x", (evt)->data[i]));				\
 	DPRINTF(("\n"));							\
 } while(0)
 #else
 #define DUMP_BTHCI_EVT(hci, evt)
 #endif
 
-#define HCI_EVENT_INQUIRY_COMPL			0x01
-#define HCI_EVENT_INQUIRY_RESULT		0x02
-#define HCI_EVENT_CON_COMPL			0x03
-#define HCI_EVENT_CON_REQ			0x04
-#define HCI_EVENT_DISCON_COMPL			0x05
-#define HCI_EVENT_AUTH_COMPL			0x06
-#define HCI_EVENT_REMOTE_NAME_REQ_COMPL		0x07
-#define HCI_EVENT_ENCRYPTION_CHANGE		0x08
-#define HCI_EVENT_CHANGE_CON_LINK_KEY_COMPL	0x09
-#define HCI_EVENT_MASTER_LINK_KEY_COMPL		0x0a
-#define HCI_EVENT_READ_REMOTE_FEATURES_COMPL	0x0b
-#define HCI_EVENT_READ_REMOTE_VER_INFO_COMPL	0x0c
-#define HCI_EVENT_QOS_SETUP_COMPL		0x0d
-#define HCI_EVENT_COMMAND_COMPL			0x0e
-#define HCI_EVENT_COMMAND_STATE			0x0f
-#define HCI_EVENT_HARDWARE_ERROR		0x10
-#define HCI_EVENT_FLUSH_OCCUR			0x11
-#define HCI_EVENT_ROLE_CHANGE			0x12
-#define HCI_EVENT_NUM_COMPL_PKTS		0x13
-#define HCI_EVENT_MODE_CHANGE			0x14
-#define HCI_EVENT_RETURN_LINK_KEYS		0x15
-#define HCI_EVENT_PIN_CODE_REQ			0x16
-#define HCI_EVENT_LINK_KEY_REQ			0x17
-#define HCI_EVENT_LINK_KEY_NOTIFICATION		0x18
-#define HCI_EVENT_LOOPBACK_COMMAND		0x19
-#define HCI_EVENT_DATA_BUFFER_OVERFLOW		0x1a
-#define HCI_EVENT_MAX_SLOT_CHANGE		0x1b
-#define HCI_EVENT_READ_CLOCK_OFFSET_COMPL	0x1c
-#define HCI_EVENT_CON_PKT_TYPE_CHANGED		0x1d
-#define HCI_EVENT_QOS_VIOLATION			0x1e
-#define HCI_EVENT_PAGE_SCAN_MODE_CHANGE		0x1f
-#define HCI_EVENT_PAGE_SCAN_REP_MODE_CHANGE	0x20
-#define HCI_EVENT_FLOW_SPECIFICATION_COMPL	0x21
-#define HCI_EVENT_RSSI_RESULT			0x22
-#define HCI_EVENT_READ_REMOTE_EXTENDED_FEATURES	0x23
-#define HCI_EVENT_SCO_CON_COMPL			0x2c
-#define HCI_EVENT_SCO_CON_CHANGED		0x2d
-#define HCI_EVENT_SNIFF_SUBRATING		0x2e
-#define HCI_EVENT_EXTENDED_RESULT		0x2f
-#define HCI_EVENT_ENCRYPTION_KEY_REFRESH	0x30
-#define HCI_EVENT_IO_CAPABILITY_REQ		0x31
-#define HCI_EVENT_IO_CAPABILITY_RSP		0x32
-#define HCI_EVENT_USER_CONFIRM_REQ		0x33
-#define HCI_EVENT_USER_PASSKEY_REQ		0x34
-#define HCI_EVENT_REMOTE_OOB_DATA_REQ		0x35
-#define HCI_EVENT_SIMPLE_PAIRING_COMPL		0x36
-#define HCI_EVENT_LINK_SUPERVISION_TO_CHANGED	0x38
-#define HCI_EVENT_ENHANCED_FLUSH_COMPL		0x39
-#define HCI_EVENT_USER_PASSKEY_NOTIFICATION	0x3b
-#define HCI_EVENT_KEYPRESS_NOTIFICATION		0x3c
-#define HCI_EVENT_REMOTE_FEATURES_NOTIFICATION	0x3d
-#define HCI_EVENT_BT_LOGO			0xfe
-#define HCI_EVENT_VENDOR			0xff
+#define BTHCI_OGF_LC			0x01
+#define BTHCI_OCF_INQUIRY		0x0001
 
-#define HCI_OGF_LC			0x01
-#define HCI_OCF_INQUIRY			0x0001
+#define BTHCI_OGF_CB			0x03
+#define BTHCI_OCF_RESET			0x0003
 
-#define HCI_OGF_CB			0x03
-#define HCI_OCF_RESET			0x0003
+#define BTHCI_OGF_INFO			0x04
+#define BTHCI_OCF_READ_VERSION		0x0001
+#define BTHCI_OCF_READ_COMMANDS		0x0002
+#define BTHCI_OCF_READ_FEATURES		0x0003
+#define BTHCI_OCF_READ_FEATURES_E	0x0004
+#define BTHCI_OCF_READ_BUFFER_SIZE	0x0005
+#define BTHCI_OCF_READ_BDADDR		0x0009
 
-#define HCI_OGF_INFO			0x04
-#define HCI_OCF_READ_VERSION		0x0001
-#define HCI_OCF_READ_COMMANDS		0x0002
-#define HCI_OCF_READ_FEATURES		0x0003
-#define HCI_OCF_READ_FEATURES_E		0x0004
-#define HCI_OCF_READ_BUFFER_SIZE	0x0005
-#define HCI_OCF_READ_BDADDR		0x0009
-
-struct hci_cmd_complete {
+struct bthci_cmd_complete {
 	uint8_t			buff_sz;
 	uint16_t		op;
 } __packed;
 struct bthci_evt_complete {
-	struct bt_evt_head	head;
-	struct hci_cmd_complete	event;
+	struct bt_evt_head		head;
+	struct bthci_cmd_complete	event;
 	/* evt_head + cmd_complete = 5 */
-	uint8_t			data[sizeof(struct bt_evt) - 5];
+	uint8_t				data[sizeof(struct bt_evt) - 5];
 } __packed;
 #ifdef BTHCI_DEBUG
 #define DUMP_BTHCI_EVT_COMPLETE(hci, evt) do {					\
@@ -136,7 +89,7 @@ struct bthci_evt_complete {
 	    DEVNAME(hci), (evt)->head.op, (evt)->head.len,			\
 	    (evt)->event.buff_sz, (evt)->event.op));				\
 	for (int i = 0;								\
-	    i < (evt)->head.len - sizeof(struct hci_cmd_complete); i++)		\
+	    i < (evt)->head.len - sizeof(struct bthci_cmd_complete); i++)	\
 		DPRINTF((" %02x", (evt)->data[i]));				\
 	DPRINTF(("\n"));							\
 } while(0)
@@ -144,14 +97,14 @@ struct bthci_evt_complete {
 #define DUMP_BTHCI_EVT_COMPLETE(hci, evt)
 #endif /* BTHCI_DEBUG */
 
-struct hci_cmd_state {
+struct bthci_cmd_state {
 	uint8_t			state;
 	uint8_t			buff_sz;
 	uint16_t		op;
 } __packed;
 struct bthci_evt_state {
 	struct bt_evt_head	head;
-	struct hci_cmd_state	event;
+	struct bthci_cmd_state	event;
 } __packed;
 #ifdef BTHCI_DEBUG
 #define DUMP_BTHCI_EVT_STATE(hci, evt) do {					\
@@ -165,7 +118,7 @@ struct bthci_evt_state {
 #endif /* BTHCI_DEBUG */
 
 int bthci_enter(struct bthci *);
-int bthci_cmd(struct bthci *);
+int bthci_cmd(struct bthci *, uint8_t);
 void bthci_leave(struct bthci *);
 
 void
@@ -176,7 +129,7 @@ bthci_init(struct bthci *hci, struct device *sc, struct btbus *bus, int ipl)
 	mtx_init(&hci->mtx, ipl);
 	pool_init(&hci->evts, sizeof(struct bthci_evt), 0, ipl, 0,
 	    "bthci", NULL);
-	if (pool_prime(&hci->evts, HCI_EVTS_POOLSIZE))
+	if (pool_prime(&hci->evts, BTHCI_EVTS_POOLSIZE))
 		printf("%s: pool_prime fail, err=ENOMEM",
 		    DEVNAME(hci));
 	SIMPLEQ_INIT(&hci->fifo);
@@ -206,56 +159,57 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 	struct bthci_evt_complete *cmd_complete;
 	struct bthci_evt_state *cmd_state;
 
-	/* XXX debug */
-	DUMP_BTHCI_EVT(hci, evt);
-	if (evt->head.op == HCI_EVENT_COMMAND_COMPL) {
-		if (evt->head.len < sizeof(struct hci_cmd_complete)) {
+	if (evt->head.op == BTEVT_CMD_COMPLETE) {
+		if (evt->head.len < sizeof(struct bthci_cmd_complete)) {
+			DUMP_BTHCI_EVT(hci, evt);
 			printf("%s: invalid command complete event, short len\n",
 			    DEVNAME(hci));
-			DUMP_BTHCI_EVT(hci, evt);
 			return;
 		}
 		cmd_complete = (struct bthci_evt_complete *) evt;
-		DUMP_BTHCI_EVT_COMPLETE(hci, cmd_complete);
-		if (hci->cmd_complete) {
-			printf("%s: pending command complete event, abort\n",
+		if (cmd_complete->event.op != hci->cmd.head.op) {
+			DUMP_BTHCI_EVT_COMPLETE(hci, cmd_complete);
+			printf("%s: unexpected command complete event, drop\n",
 			    DEVNAME(hci));
-			wakeup(hci);
 			pool_put(&hci->evts, evt);
 			return;
 		}
-		if (cmd_complete->event.op == hci->cmd.head.op) {
-			hci->cmd_complete = cmd_complete;
-			wakeup(hci);
-			return;
-		}
-		printf("%s: unexpected command complete event, drop\n",
-		    DEVNAME(hci));
-		pool_put(&hci->evts, evt);
-		return;
-	} else if (evt->head.op == HCI_EVENT_COMMAND_STATE) {
-		if (evt->head.len < sizeof(struct hci_cmd_state)) {
+	} else if (evt->head.op == BTEVT_CMD_STATE) {
+		if (evt->head.len < sizeof(struct bthci_cmd_state)) {
+			DUMP_BTHCI_EVT(hci, evt);
 			printf("%s: invalid command state event, short len\n",
 			    DEVNAME(hci));
-			DUMP_BTHCI_EVT(hci, evt);
 			return;
 		}
 		cmd_state = (struct bthci_evt_state *) &evt;
-		DUMP_BTHCI_EVT_STATE(hci, cmd_state);
-		if (hci->cmd_state) {
-			printf("%s: pending command state event, abort\n",
+		if (cmd_state->event.op != hci->cmd.head.op) {
+			DUMP_BTHCI_EVT_STATE(hci, cmd_state);
+			printf("%s: unexpected command state event, drop\n",
+			    DEVNAME(hci));
+			pool_put(&hci->evts, evt);
+			return;
+		}
+	}
+	if (hci->evt_filter == evt->head.op) {
+		if (hci->evt) {
+			DUMP_BTHCI_EVT(hci, evt);
+			printf("%s: pending command filtered event, drop\n",
 			    DEVNAME(hci));
 			wakeup(hci);
 			pool_put(&hci->evts, evt);
 			return;
 		}
-		if (cmd_state->event.op == hci->cmd.head.op) {
-			hci->cmd_state = cmd_state;
-			wakeup(hci);
-			return;
-		}
-		printf("%s: unexpected command state event, drop\n",
+		/* XXX debug */
+		DUMP_BTHCI_EVT(hci, evt);
+		hci->evt = evt;
+		wakeup(hci);
+		return;
+	} else if (evt->head.op == BTEVT_CMD_COMPLETE ||
+	    evt->head.op == BTEVT_CMD_STATE) {
+		DUMP_BTHCI_EVT(hci, evt);
+		printf("%s: unexpected command event, drop\n",
 		    DEVNAME(hci));
+		wakeup(hci);
 		pool_put(&hci->evts, evt);
 		return;
 	}
@@ -282,15 +236,16 @@ bthci_read_evt(struct bthci *hci)
  * 1 byte timeout : max 0x30 * 1,28s
  * 1 byte limit : 0x00 mean no limit
  */
-#define HCI_LC_INQUIRY		(HCI_OCF_INQUIRY|(HCI_OGF_LC<<10))
-#define HCI_INQUIRY_LAP_2	0x9E
-#define HCI_INQUIRY_LAP_1	0x8B
-#define HCI_INQUIRY_LAP_GIAC_0	0x33
-#define HCI_INQUIRY_LAP_LIAC_0	0x00
+#define BTHCI_LC_INQUIRY		(BTHCI_OCF_INQUIRY|(BTHCI_OGF_LC<<10))
+#define BTHCI_INQUIRY_LAP_2		0x9E
+#define BTHCI_INQUIRY_LAP_1		0x8B
+#define BTHCI_INQUIRY_LAP_GIAC_0	0x33
+#define BTHCI_INQUIRY_LAP_LIAC_0	0x00
 int
 bthci_lc_inquiry(struct bthci *hci, int timeout, int limit)
 {
 	int err;
+	struct bthci_evt_state *cmd_state;
 	struct hci_lc_inquiry {
 		uint8_t lap[3];
 		uint8_t timeout;
@@ -312,140 +267,131 @@ bthci_lc_inquiry(struct bthci *hci, int timeout, int limit)
 		    DEVNAME(hci));
 		return (EBUSY);
 	}
-	hci->cmd.head.op = htole16(HCI_LC_INQUIRY);
+	hci->cmd.head.op = htole16(BTHCI_LC_INQUIRY);
 	hci->cmd.head.len = sizeof(struct hci_lc_inquiry);
 	inquiry = (struct hci_lc_inquiry *)&hci->cmd.data;
-	inquiry->lap[0] = HCI_INQUIRY_LAP_GIAC_0;
-	inquiry->lap[1] = HCI_INQUIRY_LAP_1;
-	inquiry->lap[2] = HCI_INQUIRY_LAP_2;
+	inquiry->lap[0] = BTHCI_INQUIRY_LAP_GIAC_0;
+	inquiry->lap[1] = BTHCI_INQUIRY_LAP_1;
+	inquiry->lap[2] = BTHCI_INQUIRY_LAP_2;
 	inquiry->timeout = timeout * 100 / 128;
 	inquiry->limit = limit;
-	err = bthci_cmd(hci);
+	err = bthci_cmd(hci, BTEVT_CMD_STATE);
 	bthci_leave(hci);
+	if (hci->evt) {
+		cmd_state = (struct bthci_evt_state *)hci->evt;
+		err = cmd_state->event.state;
+		pool_put(&hci->evts, hci->evt);
+		hci->evt = NULL;
+	}
 	return (err);
 }
 
 /*
  * hci controller and baseband
  */
-#define HCI_CB_RESET		(HCI_OCF_RESET|(HCI_OGF_CB<<10))
+#define BTHCI_CB_RESET		(BTHCI_OCF_RESET|(BTHCI_OGF_CB<<10))
 int
 bthci_cb_reset(struct bthci *hci)
 {
 	int err;
+	struct bthci_evt_complete *cmd_complete;
 	bthci_enter(hci);
-	hci->cmd.head.op = htole16(HCI_CB_RESET);
+	hci->cmd.head.op = htole16(BTHCI_CB_RESET);
 	hci->cmd.head.len = 0;
-	if ((err = bthci_cmd(hci)))
+	if ((err = bthci_cmd(hci, BTEVT_CMD_COMPLETE)))
 		goto fail;
-	if (hci->cmd_state) {
-		if (hci->cmd_state->event.state)
-			err = hci->cmd_state->event.state;
-		pool_put(&hci->evts, hci->cmd_state);
-		hci->cmd_state = NULL;
-		goto fail;
-	}
-	if (hci->cmd_complete) {
-		if (hci->cmd_complete->head.len !=
-		    sizeof(struct hci_cmd_complete) + 1) {
+	if (hci->evt) {
+		cmd_complete = (struct bthci_evt_complete *)hci->evt;
+		if (cmd_complete->head.len !=
+		    sizeof(struct bthci_cmd_complete) + 1) {
 			printf("%s: invalid event parameter len %d != %d\n",
-			    DEVNAME(hci), hci->cmd_complete->head.len,
-			    (int)(sizeof(struct hci_cmd_complete) + 1));
+			    DEVNAME(hci), cmd_complete->head.len,
+			    (int)(sizeof(struct bthci_cmd_complete) + 1));
 			err = BTERR_UNKNOW; /* XXX proper error code */
 		} else
-			err = hci->cmd_complete->data[0];
-		pool_put(&hci->evts, hci->cmd_complete);
-		hci->cmd_complete = NULL;
+			err = cmd_complete->data[0];
+		pool_put(&hci->evts, hci->evt);
+		hci->evt = NULL;
 	}
  fail:
 	bthci_leave(hci);
 	return (err);
 }
 
-/*
- * hci information
- */
-#define HCI_OCF_READ_VERSION		0x0001
-#define HCI_OCF_READ_COMMANDS		0x0002
-#define HCI_OCF_READ_FEATURES		0x0003
-#define HCI_OCF_READ_FEATURES_E		0x0004
-#define HCI_OCF_READ_BUFFER_SIZE	0x0005
-#define HCI_OCF_READ_BDADDR		0x0009
-
-#define HCI_INFO_VERSION	(HCI_OCF_READ_VERSION|(HCI_OGF_INFO<<10))
+#define BTHCI_INFO_VERSION	(BTHCI_OCF_READ_VERSION|(BTHCI_OGF_INFO<<10))
 int
 bthci_info_version(struct bthci *hci)
 {
 	int err;
 	bthci_enter(hci);
-	hci->cmd.head.op = htole16(HCI_INFO_VERSION);
+	hci->cmd.head.op = htole16(BTHCI_INFO_VERSION);
 	hci->cmd.head.len = 0;
-	err = bthci_cmd(hci);
+	err = bthci_cmd(hci, BTEVT_CMD_COMPLETE);
 	bthci_leave(hci);
 	return (err);
 }
 
-#define HCI_INFO_COMMANDS	(HCI_OCF_READ_COMMANDS|(HCI_OGF_INFO<<10))
+#define BTHCI_INFO_COMMANDS	(BTHCI_OCF_READ_COMMANDS|(BTHCI_OGF_INFO<<10))
 int
 bthci_info_commands(struct bthci *hci)
 {
 	int err;
 	bthci_enter(hci);
-	hci->cmd.head.op = htole16(HCI_INFO_COMMANDS);
+	hci->cmd.head.op = htole16(BTHCI_INFO_COMMANDS);
 	hci->cmd.head.len = 0;
-	err = bthci_cmd(hci);
+	err = bthci_cmd(hci, BTEVT_CMD_COMPLETE);
 	bthci_leave(hci);
 	return (err);
 }
 
-#define HCI_INFO_FEATURES	(HCI_OCF_READ_FEATURES|(HCI_OGF_INFO<<10))
+#define BTHCI_INFO_FEATURES	(BTHCI_OCF_READ_FEATURES|(BTHCI_OGF_INFO<<10))
 int
 bthci_info_features(struct bthci *hci)
 {
 	int err;
 	bthci_enter(hci);
-	hci->cmd.head.op = htole16(HCI_INFO_FEATURES);
+	hci->cmd.head.op = htole16(BTHCI_INFO_FEATURES);
 	hci->cmd.head.len = 0;
-	err = bthci_cmd(hci);
+	err = bthci_cmd(hci, BTEVT_CMD_COMPLETE);
 	bthci_leave(hci);
 	return (err);
 }
 
-#define HCI_INFO_FEATURES_E	(HCI_OCF_READ_FEATURES_E|(HCI_OGF_INFO<<10))
+#define BTHCI_INFO_FEATURES_E	(BTHCI_OCF_READ_FEATURES_E|(BTHCI_OGF_INFO<<10))
 int
 bthci_info_extended_features(struct bthci *hci)
 {
 	int err;
 	bthci_enter(hci);
-	hci->cmd.head.op = htole16(HCI_INFO_FEATURES_E);
+	hci->cmd.head.op = htole16(BTHCI_INFO_FEATURES_E);
 	hci->cmd.head.len = 0;
-	err = bthci_cmd(hci);
+	err = bthci_cmd(hci, BTEVT_CMD_COMPLETE);
 	bthci_leave(hci);
 	return (err);
 }
 
-#define HCI_INFO_BUFFER		(HCI_OCF_READ_BUFFER_SIZE|(HCI_OGF_INFO<<10))
+#define BTHCI_INFO_BUFFER	(BTHCI_OCF_READ_BUFFER_SIZE|(BTHCI_OGF_INFO<<10))
 int
 bthci_info_buffer(struct bthci *hci)
 {
 	int err;
 	mtx_enter(&hci->mtx);
-	hci->cmd.head.op = htole16(HCI_INFO_BUFFER);
+	hci->cmd.head.op = htole16(BTHCI_INFO_BUFFER);
 	hci->cmd.head.len = 0;
-	err = bthci_cmd(hci);
+	err = bthci_cmd(hci, BTEVT_CMD_COMPLETE);
 	bthci_leave(hci);
 	return (err);
 }
 
-#define HCI_INFO_BDADDR		(HCI_OCF_READ_BDADDR|(HCI_OGF_INFO<<10))
+#define BTHCI_INFO_BDADDR	(BTHCI_OCF_READ_BDADDR|(BTHCI_OGF_INFO<<10))
 int
 bthci_info_bdaddr(struct bthci *hci)
 {
 	int err;
 	bthci_enter(hci);
-	hci->cmd.head.op = htole16(HCI_INFO_BDADDR);
+	hci->cmd.head.op = htole16(BTHCI_INFO_BDADDR);
 	hci->cmd.head.len = 0;
-	err = bthci_cmd(hci);
+	err = bthci_cmd(hci, BTEVT_CMD_COMPLETE);
 	bthci_leave(hci);
 	return (err);
 }
@@ -464,15 +410,18 @@ bthci_enter(struct bthci *hci)
 }
 
 int
-bthci_cmd(struct bthci *hci)
+bthci_cmd(struct bthci *hci, uint8_t evt_filter)
 {
 	int err;
+	hci->evt_filter = evt_filter;
+	/* XXX debug */
+	DUMP_BTHCI_CMD(hci, &hci->cmd);
 	mtx_leave(&hci->mtx);
 	err = hci->bus->cmd(hci->sc, &hci->cmd);
 	mtx_enter(&hci->mtx);
 	if (err)
 		return (err);
-	if (hci->cmd_complete == NULL && hci->cmd_state == NULL)
+	if (hci->evt == NULL)
 		err = msleep_nsec(hci, &hci->mtx, MAXPRI, "bthci", BT_TIMEOUT);
 	return (err);
 }
@@ -480,6 +429,11 @@ bthci_cmd(struct bthci *hci)
 void
 bthci_leave(struct bthci *hci)
 {
+	if (hci->evt) {
+		pool_put(&hci->evts, hci->evt);
+		hci->evt = NULL;
+	}
+	hci->evt_filter = 0;
 	hci->cmd.head.op = 0;
 	mtx_leave(&hci->mtx);
 }
