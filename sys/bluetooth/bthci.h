@@ -1,3 +1,4 @@
+/*	$OpenBSD$	*/
 /*
  * Copyright (c) 2020 Fabien ROMANO <fabien@openbsd.org>
  *

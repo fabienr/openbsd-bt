@@ -1,3 +1,4 @@
+/*	$OpenBSD$	*/
 /*
  * Copyright (c) 2020 Fabien ROMANO <fabien@openbsd.org>
  *
@@ -14,9 +15,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* XXX */
-#define BT_DEBUG
-
 #include <sys/types.h>
 #include <sys/systm.h>
 #include <sys/time.h>
@@ -27,7 +25,8 @@
 #include <sys/kthread.h>
 #include <sys/rwlock.h>
 
-#include <dev/bluetooth/bluetooth.h>
+#include <dev/bluetooth/bluetoothreg.h>
+#include <dev/bluetooth/bluetoothvar.h>
 #include <bluetooth/bthci.h>
 
 #ifdef BLUETOOTH_DEBUG

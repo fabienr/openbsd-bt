@@ -1,3 +1,4 @@
+/*	$OpenBSD$	*/
 /*
  * Copyright (c) 2020 Fabien ROMANO <fabien@openbsd.org>
  *
@@ -14,9 +15,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
- /* XXX debug */
-#define UBT_DEBUG
-
 #include <sys/types.h>
 #include <sys/errno.h>
 #include <sys/systm.h>
@@ -30,10 +28,11 @@
 #include <dev/usb/usbdi_util.h>
 #include <dev/usb/usbdivar.h>
 #include <dev/usb/usbdevs.h>
-#include <dev/bluetooth/bluetooth.h>
-#include <bluetooth/bthci.h>
 
-#include "ubt.h"
+#include <dev/usb/ubt.h>
+#include <dev/bluetooth/bluetoothreg.h>
+#include <dev/bluetooth/bluetoothvar.h>
+#include <bluetooth/bthci.h>
 
 #ifdef BLUETOOTH_DEBUG
 #define UBT_DEBUG

@@ -15,13 +15,30 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* USB endpoints addresses. */
-#define UBT_CMD_OUT	(UE_DIR_OUT | 0) /* default_pipe, handle by usbd */
-#define UBT_EVT_IN	(UE_DIR_IN  | 1)
-#define UBT_ACL_OUT	(UE_DIR_OUT | 2)
-#define UBT_ACL_IN	(UE_DIR_IN  | 2)
-#define UBT_SCO_OUT	(UE_DIR_OUT | 3)
-#define UBT_SCO_IN	(UE_DIR_IN  | 3)
+#define BT_TIMEOUT		SEC_TO_NSEC(5)
+#define BT_STATE_INIT		0
+#define BT_STATE_DYING		1
+#define BT_STATE_WAITING	2
 
-#define UBT_TIMEOUT	1000
-#define UBT_CMD_TIMEOUT	UBT_TIMEOUT
+#define BT_EVTS_POOLSIZE	32
+
+struct bt_cmd;
+struct bt_evt;
+struct bt_acl;
+struct bt_sco;
+struct bthci;
+struct btbus {
+	int (*cmd)(struct device *, const struct bt_cmd *);
+	int (*acl)(struct device *, const struct bt_acl *);
+	int (*sco)(struct device *, const struct bt_sco *);
+};
+
+struct bluetooth_softc {
+	struct device		 sc_dev;
+	struct bthci		*hci;
+	struct rwlock		 lock;
+	int			 state;
+};
+
+void bluetooth_attach(struct bluetooth_softc *,  struct bthci *);
+void bluetooth_detach(struct bluetooth_softc *);
