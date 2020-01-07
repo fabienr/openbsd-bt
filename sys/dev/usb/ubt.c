@@ -35,6 +35,17 @@
 
 #include "ubt.h"
 
+#ifdef BLUETOOTH_DEBUG
+#define UBT_DEBUG
+#endif
+
+#ifdef UBT_DEBUG
+#define DPRINTF(x)	do { printf x; } while (0)
+#else
+#define DPRINTF(x)
+#endif
+#define DEVNAME(sc) ((sc)->sc_sc.sc_dev.dv_xname)
+
 struct ubt_softc {
 	struct bluetooth_softc	 sc_sc;
 	struct bthci		 hci;
@@ -65,13 +76,6 @@ static struct btbus ubt_bus = {
 	.acl = ubt_acl,
 	.sco = ubt_sco,
 };
-
-#ifdef UBT_DEBUG
-#define DPRINTF(x)	do { printf x; } while (0)
-#else
-#define DPRINTF(x)
-#endif
-#define DEVNAME(sc) ((sc)->sc_sc.sc_dev.dv_xname)
 
 int	ubt_match(struct device *, void *, void *);
 void	ubt_attach(struct device *, struct device *, void *);
@@ -267,6 +271,7 @@ ubt_detach(struct device *self, int flags)
 	DPRINTF(("%s: ubt_detach\n", DEVNAME(usc)));
 
 	usbd_ref_wait(usc->sc_udev);
+	bluetooth_detach(&usc->sc_sc);
 	bthci_destroy(&usc->hci);
 	ubt_close_pipes(usc);
 	ubt_free_xfers(usc);

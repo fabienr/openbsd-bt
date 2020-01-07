@@ -14,7 +14,34 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#define BT_TIMEOUT	SEC_TO_NSEC(5)
+/* XXX debug */
+#define BT_DEBUG
+
+#define BT_TIMEOUT		SEC_TO_NSEC(5)
+#define BT_STATE_INIT		0
+#define BT_STATE_DYING		1
+#define BT_STATE_WAITING	2
+
+#define BT_EVTS_POOLSIZE	32
+#ifdef BT_DEBUG
+#define DUMP_BT_CMD(devname, cmd) do {						\
+	DPRINTF(("%s: cmd head(op=%04X, len=%d), data",				\
+	    (devname), (cmd)->head.op, (cmd)->head.len));			\
+	for (int i = 0; i < (cmd)->head.len; i++)				\
+		DPRINTF((" %02x ", (cmd)->data[i]));				\
+	DPRINTF(("\n"));							\
+} while(0)
+#define DUMP_BT_EVT(devname, evt) do {						\
+	DPRINTF(("%s: event head(op=%02X, len=%d), data",			\
+	    (devname), (evt)->head.op, (evt)->head.len));			\
+	for (int i = 0; i < (evt)->head.len; i++)				\
+		DPRINTF((" %02x", (evt)->data[i]));				\
+	DPRINTF(("\n"));							\
+} while(0)
+#else
+#define DUMP_BT_EVT(hci, evt)
+#define DUMP_BT_CMD(hci, evt)
+#endif
 
 struct bt_cmd;
 struct bt_evt;
@@ -30,9 +57,12 @@ struct btbus {
 struct bluetooth_softc {
 	struct device		 sc_dev;
 	struct bthci		*hci;
+	struct rwlock		 lock;
+	int			 state;
 };
 
 void bluetooth_attach(struct bluetooth_softc *,  struct bthci *);
+void bluetooth_detach(struct bluetooth_softc *);
 
 /* bt hci cmd packet, header 3, data max 255, total 258 bytes */
 struct bt_cmd_head {

@@ -31,32 +31,16 @@
 
 #include "bthci.h"
 
+#ifdef BLUETOOTH_DEBUG
+#define BTHCI_DEBUG
+#endif
+
 #ifdef BTHCI_DEBUG
 #define DPRINTF(x)	do { printf x; } while (0)
 #else
 #define DPRINTF(x)
 #endif
 #define DEVNAME(hci) ((hci)->sc->dv_xname)
-
-#define BTHCI_EVTS_POOLSIZE		32
-#ifdef BTHCI_DEBUG
-#define DUMP_BTHCI_CMD(hci, cmd) do {						\
-	DPRINTF(("%s: cmd head(op=%04X, len=%d), data",				\
-	    DEVNAME(hci), (cmd)->head.op, (cmd)->head.len));			\
-	for (int i = 0; i < (cmd)->head.len; i++)				\
-		DPRINTF((" %02x ", (cmd)->data[i]));				\
-	DPRINTF(("\n"));							\
-} while(0)
-#define DUMP_BTHCI_EVT(hci, evt) do {						\
-	DPRINTF(("%s: event head(op=%02X, len=%d), data",			\
-	    DEVNAME(hci), (evt)->head.op, (evt)->head.len));			\
-	for (int i = 0; i < (evt)->head.len; i++)				\
-		DPRINTF((" %02x", (evt)->data[i]));				\
-	DPRINTF(("\n"));							\
-} while(0)
-#else
-#define DUMP_BTHCI_EVT(hci, evt)
-#endif
 
 #define BTHCI_OGF_LC			0x01
 #define BTHCI_OCF_INQUIRY		0x0001
@@ -129,7 +113,7 @@ bthci_init(struct bthci *hci, struct device *sc, struct btbus *bus, int ipl)
 	mtx_init(&hci->mtx, ipl);
 	pool_init(&hci->evts, sizeof(struct bthci_evt), 0, ipl, 0,
 	    "bthci", NULL);
-	if (pool_prime(&hci->evts, BTHCI_EVTS_POOLSIZE))
+	if (pool_prime(&hci->evts, BT_EVTS_POOLSIZE))
 		printf("%s: pool_prime fail, err=ENOMEM",
 		    DEVNAME(hci));
 	SIMPLEQ_INIT(&hci->fifo);
@@ -161,7 +145,7 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 
 	if (evt->head.op == BTEVT_CMD_COMPLETE) {
 		if (evt->head.len < sizeof(struct bthci_cmd_complete)) {
-			DUMP_BTHCI_EVT(hci, evt);
+			DUMP_BT_EVT(DEVNAME(hci), evt);
 			printf("%s: invalid command complete event, short len\n",
 			    DEVNAME(hci));
 			return;
@@ -176,7 +160,7 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 		}
 	} else if (evt->head.op == BTEVT_CMD_STATE) {
 		if (evt->head.len < sizeof(struct bthci_cmd_state)) {
-			DUMP_BTHCI_EVT(hci, evt);
+			DUMP_BT_EVT(DEVNAME(hci), evt);
 			printf("%s: invalid command state event, short len\n",
 			    DEVNAME(hci));
 			return;
@@ -192,7 +176,7 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 	}
 	if (hci->evt_filter == evt->head.op) {
 		if (hci->evt) {
-			DUMP_BTHCI_EVT(hci, evt);
+			DUMP_BT_EVT(DEVNAME(hci), evt);
 			printf("%s: pending command filtered event, drop\n",
 			    DEVNAME(hci));
 			wakeup(hci);
@@ -200,20 +184,20 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 			return;
 		}
 		/* XXX debug */
-		DUMP_BTHCI_EVT(hci, evt);
+		DUMP_BT_EVT(DEVNAME(hci), evt);
 		hci->evt = evt;
 		wakeup(hci);
 		return;
 	} else if (evt->head.op == BTEVT_CMD_COMPLETE ||
 	    evt->head.op == BTEVT_CMD_STATE) {
-		DUMP_BTHCI_EVT(hci, evt);
+		DUMP_BT_EVT(DEVNAME(hci), evt);
 		printf("%s: unexpected command event, drop\n",
 		    DEVNAME(hci));
 		wakeup(hci);
 		pool_put(&hci->evts, evt);
 		return;
 	}
-	DUMP_BTHCI_EVT(hci, evt);
+	DUMP_BT_EVT(DEVNAME(hci), evt);
 	/* XXX SIMPLEQ_INSERT_TAIL(&hci->fifo, (struct bthci_evt *)evt, fifo); */
 	pool_put(&hci->evts, evt);
 }
@@ -415,7 +399,7 @@ bthci_cmd(struct bthci *hci, uint8_t evt_filter)
 	int err;
 	hci->evt_filter = evt_filter;
 	/* XXX debug */
-	DUMP_BTHCI_CMD(hci, &hci->cmd);
+	DUMP_BT_CMD(DEVNAME(hci), &hci->cmd);
 	mtx_leave(&hci->mtx);
 	err = hci->bus->cmd(hci->sc, &hci->cmd);
 	mtx_enter(&hci->mtx);
