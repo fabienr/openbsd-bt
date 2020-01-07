@@ -45,6 +45,13 @@ struct cfdriver bluetooth_cd = {
     NULL, "bluetooth", DV_DULL
 };
 
+void bluetooth_attach(struct bluetooth_softc *, struct bthci *);
+void bluetooth_detach(struct bluetooth_softc *);
+
+int bluetoothopen(dev_t, int, int, struct proc *);
+int bluetoothclose(dev_t, int, int, struct proc *);
+int bluetoothioctl(dev_t, u_long, caddr_t, int, struct proc *);
+
 void bt_kthread_deferred(void *);
 void bt_kthread(void *);
 int bt_init(struct bluetooth_softc *);
@@ -63,6 +70,23 @@ bluetooth_detach(struct bluetooth_softc *sc)
 	rw_enter_write(&sc->lock);
 	sc->state = BT_STATE_DYING;
 	rw_exit_write(&sc->lock);
+}
+
+int
+bluetoothopen(dev_t dev, int flags, int fmt, struct proc *p)
+{
+	return (0);
+}
+
+int bluetoothclose(dev_t dev, int flags, int fmt, struct proc *p)
+{
+	return (0);
+}
+
+int
+bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
+{
+	return (0);
 }
 
 void

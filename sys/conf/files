@@ -450,7 +450,7 @@ device	virtio {}			# VirtIO
 
 # Bluetooth (BT) controller
 device	bluetooth
-file	dev/bluetooth/bluetooth.c	bluetooth
+file	dev/bluetooth/bluetooth.c	bluetooth	needs-flag
 file	bluetooth/bthci.c		bluetooth
 
 # UHCI USB controller

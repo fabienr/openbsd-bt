@@ -369,6 +369,13 @@ extern struct cdevsw cdevsw[];
 	(dev_type_stop((*))) enodev, 0, selfalse, \
 	(dev_type_mmap((*))) enodev }
 
+/* open, close, ioctl */
+#define	cdev_bluetooth_init(c,n) { \
+	dev_init(c,n,open), dev_init(c,n,close), (dev_type_read((*))) enodev, \
+	(dev_type_write((*))) enodev, dev_init(c,n,ioctl), \
+	(dev_type_stop((*))) enodev, 0, selfalse, \
+	(dev_type_mmap((*))) enodev }
+
 /* open, close, read, write, ioctl, poll, kqfilter */
 #define	cdev_usbdev_init(c,n) { \
 	dev_init(c,n,open), dev_init(c,n,close), dev_init(c,n,read), \
@@ -607,6 +614,8 @@ cdev_decl(vscsi);
 
 cdev_decl(gpr);
 cdev_decl(bktr);
+
+cdev_decl(bluetooth);
 
 cdev_decl(usb);
 cdev_decl(ugen);
