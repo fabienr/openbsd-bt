@@ -48,9 +48,23 @@ int bthci_lc_inquiry(struct bthci *, int, int);
 
 int bthci_cb_reset(struct bthci *);
 
-int bthci_info_version(struct bthci *, struct bt_hci_info *);
+struct bt_hci_info_version {
+	uint8_t		state;
+	uint8_t		hci_version;
+	uint16_t	hci_revision;
+	uint8_t		lmp_version;
+	uint16_t	bt_manufacturer;
+	uint16_t	lmp_revision;
+} __packed;
+int bthci_info_version(struct bthci *, struct bt_hci_info_version *);
+
 int bthci_info_commands(struct bthci *);
 int bthci_info_features(struct bthci *);
 int bthci_info_extended_features(struct bthci *);
 int bthci_info_buffer(struct bthci *);
-int bthci_info_bdaddr(struct bthci *);
+
+struct bt_hci_info_bdaddr {
+	uint8_t			state;
+	struct bluetooth_bdaddr	bdaddr;
+} __packed;
+int bthci_info_bdaddr(struct bthci *, struct bt_hci_info_bdaddr *);

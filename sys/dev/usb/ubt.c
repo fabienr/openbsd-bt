@@ -269,6 +269,7 @@ int
 ubt_detach(struct device *self, int flags)
 {
 	struct ubt_softc *usc = (struct ubt_softc *)self;
+
 	DPRINTF(("%s: ubt_detach\n", DEVNAME(usc)));
 
 	usbd_ref_wait(usc->sc_udev);
@@ -481,7 +482,7 @@ ubt_cmd(struct device *sc, const struct bt_cmd *pkt)
 	if (err != USBD_NORMAL_COMPLETION) {
 		printf("%s: ubt_cmd, usbd_transfer, err=%s\n",
 		    DEVNAME(usc), usbd_errstr(err));
-		return (EIO); /* XXX proper error code */
+		return (EIO);
 	}
 
 	return (0);

@@ -82,7 +82,7 @@ bluetoothopen(dev_t dev, int flags, int fmt, struct proc *p)
 	unit = BLUETOOTHUNIT(dev);
 	if (unit >= bluetooth_cd.cd_ndevs ||    /* make sure it was attached */
 	    bluetooth_cd.cd_devs[unit] == NULL)
-		return (BT_ERR_UNKNOW); /* XXX proper error code, ENXIO */
+		return (ENXIO);
 	return (0);
 }
 
@@ -95,16 +95,39 @@ int
 bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 {
 	struct bluetooth_softc *sc;
+	union {
+		struct bt_hci_info_version version;
+		struct bt_hci_info_bdaddr bdaddr;
+	} hci_info;
+	struct bluetooth_info *info;
 	int err = 0;
+
 	sc = bluetooth_cd.cd_devs[BLUETOOTHUNIT(dev)];
 	switch (cmd) {
 	case DIOCBTINFO:
-		err = bthci_info_version(sc->hci, (struct bt_hci_info*)addr);
+		info = (struct bluetooth_info *)addr;
+		memset(addr, 0, sizeof(*info)); /* XXX not required, safer ? */
+
+		err = bthci_info_version(sc->hci, &hci_info.version);
+		if (err)
+			goto fail;
+		info->bt_manufacturer = hci_info.version.bt_manufacturer;
+		info->hci_version = hci_info.version.hci_version;
+		info->hci_revision = hci_info.version.hci_revision;
+		info->lmp_version = hci_info.version.lmp_version;
+		info->lmp_revision = hci_info.version.lmp_revision;
+
+		err = bthci_info_bdaddr(sc->hci, &hci_info.bdaddr);
+		if (err)
+			goto fail;
+		memcpy(&info->bt_addr, &hci_info.bdaddr.bdaddr,
+		    sizeof(info->bt_addr));
 		break;
 	default:
-		err = BT_ERR_UNKNOW; /* XXX proper error code */
+		err = EINVAL;
 		break;
 	}
+ fail:
 	return (err);
 }
 
@@ -137,15 +160,13 @@ bt_kthread(void *priv)
 	if ((err = rw_enter(&sc->lock, RW_DOWNGRADE))) {
 		printf("%s: rw_enter, err=%d\n",
 		    DEVNAME(sc), err);
-		sc->state = BT_STATE_WAITING;
+		sc->state = BT_STATE_DYING;
 	}
 	while(sc->state != BT_STATE_DYING) {
 		while((evt = bthci_read_evt(sc->hci)) != NULL) {
 			DUMP_BT_EVT(DEVNAME(sc), evt);
 		}
-		rw_exit(&sc->lock);
-		tsleep_nsec(sc, MAXPRI, DEVNAME(sc), 100);
-		rw_enter_read(&sc->lock);
+		rwsleep_nsec(sc, &sc->lock, MAXPRI, DEVNAME(sc), 100);
 	}
 	err = (sc->state != BT_STATE_DYING);
 	rw_exit_read(&sc->lock);

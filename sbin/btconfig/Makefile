@@ -1,11 +1,10 @@
 #	$OpenBSD$
 
 PROG=	btconfig
-SRCS=	btconfig.c
+SRCS=	btconfig.c btstrings.c
 MAN=	btconfig.8
 
-# XXX, to check
-#LDADD=	-lutil -lm
-#DPADD=	${LIBUTIL}
+LDADD=	-lutil
+DPADD=	${LIBUTIL}
 
 .include <bsd.prog.mk>
