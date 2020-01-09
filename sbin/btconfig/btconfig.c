@@ -54,7 +54,7 @@ usage(void)
 int
 main(int argc, char **argv)
 {
-	int dev, unit, cmd;
+	int dev, unit, cmd = 0;
 	char *path, *realpath, *s, ch;
 
 	if (argc == 1) {
@@ -84,7 +84,7 @@ main(int argc, char **argv)
 	}
 	argv += optind;
 	argc -= optind;
-	if (argc > 1)
+	if (argc > 1 || cmd == 0)
 		usage();
 	unit = 0;
 	if (*argv) {
