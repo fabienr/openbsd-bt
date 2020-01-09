@@ -40,6 +40,7 @@
 #else
 #define DPRINTF(x)
 #endif
+
 #define DEVNAME(hci) ((hci)->sc->dv_xname)
 
 struct bthci_cmd_complete {
@@ -89,6 +90,7 @@ struct bthci_evt_state {
 
 int bthci_enter(struct bthci *);
 int bthci_cmd(struct bthci *, uint8_t);
+int bthci_cmd_complete(struct bthci *, void *, int);
 void bthci_leave(struct bthci *);
 
 void
@@ -257,33 +259,19 @@ bthci_lc_inquiry(struct bthci *hci, int timeout, int limit)
 	return (err);
 }
 
-/*
- * hci controller and baseband
- */
 #define BT_HCI_CB_RESET		(BT_HCI_OCF_RESET|(BT_HCI_OGF_CB<<10))
 int
 bthci_cb_reset(struct bthci *hci)
 {
-	int err;
-	struct bthci_evt_complete *cmd_complete;
+	int err, state;
 	bthci_enter(hci);
 	hci->cmd.head.op = htole16(BT_HCI_CB_RESET);
 	hci->cmd.head.len = 0;
 	if ((err = bthci_cmd(hci, BT_EVT_CMD_COMPLETE)))
 		goto fail;
-	if (hci->evt) {
-		cmd_complete = (struct bthci_evt_complete *)hci->evt;
-		if (cmd_complete->head.len !=
-		    sizeof(struct bthci_cmd_complete) + 1) {
-			printf("%s: invalid event parameter len %d != %d\n",
-			    DEVNAME(hci), cmd_complete->head.len,
-			    (int)(sizeof(struct bthci_cmd_complete) + 1));
-			err = BT_ERR_UNKNOW; /* XXX proper error code */
-		} else
-			err = cmd_complete->data[0];
-		pool_put(&hci->evts, hci->evt);
-		hci->evt = NULL;
-	}
+	if ((err = bthci_cmd_complete(hci, &state, 1)))
+		goto fail;
+	err = state;
  fail:
 	bthci_leave(hci);
 	return (err);
@@ -291,13 +279,20 @@ bthci_cb_reset(struct bthci *hci)
 
 #define BT_HCI_INFO_VERSION	(BT_HCI_OCF_READ_VERSION|(BT_HCI_OGF_INFO<<10))
 int
-bthci_info_version(struct bthci *hci)
+bthci_info_version(struct bthci *hci, struct bt_hci_info *info)
 {
 	int err;
 	bthci_enter(hci);
 	hci->cmd.head.op = htole16(BT_HCI_INFO_VERSION);
 	hci->cmd.head.len = 0;
-	err = bthci_cmd(hci, BT_EVT_CMD_COMPLETE);
+	if ((err = bthci_cmd(hci, BT_EVT_CMD_COMPLETE)))
+		goto fail;
+	if ((err = bthci_cmd_complete(hci, info, sizeof(struct bt_hci_info))))
+		goto fail;
+	info->hci_revision = letoh16(info->hci_revision);
+	info->manufacturer = letoh16(info->manufacturer);
+	info->lmp_revision = letoh16(info->lmp_revision);
+ fail:
 	bthci_leave(hci);
 	return (err);
 }
@@ -375,7 +370,7 @@ bthci_enter(struct bthci *hci)
 		printf("%s: bthci locked, err=EBUSY\n",
 		    DEVNAME(hci));
 		mtx_leave(&hci->mtx);
-		return (EBUSY);
+		return (BT_ERR_UNKNOW); /* XXX proper error code */
 	}
 	return (0);
 }
@@ -391,9 +386,38 @@ bthci_cmd(struct bthci *hci, uint8_t evt_filter)
 	err = hci->bus->cmd(hci->sc, &hci->cmd);
 	mtx_enter(&hci->mtx);
 	if (err)
-		return (err);
+		goto fail;
 	if (hci->evt == NULL)
 		err = msleep_nsec(hci, &hci->mtx, MAXPRI, "bthci", BT_TIMEOUT);
+ fail:
+	if (err)
+		err = BT_ERR_UNKNOW; /* XXX hide bottom layer error code */
+	return (err);
+}
+
+int
+bthci_cmd_complete(struct bthci *hci, void *dest, int len)
+{
+	int err = 0;
+	struct bthci_evt_complete *cmd_complete;
+	if (hci->evt == NULL) {
+		/* XXX should not happen */
+		printf("%s: cmd_compleete call with no event\n",
+		    DEVNAME(hci));
+		return (BT_ERR_UNKNOW); /* XXX proper error code */
+	}
+	cmd_complete = (struct bthci_evt_complete *)hci->evt;
+	if (cmd_complete->head.len - sizeof(struct bthci_cmd_complete) != len) {
+		printf("%s: invalid event parameter len %d != %d\n",
+		    DEVNAME(hci), (int)(cmd_complete->head.len -
+		    sizeof(struct bthci_cmd_complete)), len);
+		err = BT_ERR_UNKNOW; /* XXX proper error code */
+		goto fail;
+	}
+	memcpy(dest, cmd_complete->data, len);
+ fail:
+	pool_put(&hci->evts, hci->evt);
+	hci->evt = NULL;
 	return (err);
 }
 

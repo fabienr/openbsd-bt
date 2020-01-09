@@ -48,7 +48,7 @@ int bthci_lc_inquiry(struct bthci *, int, int);
 
 int bthci_cb_reset(struct bthci *);
 
-int bthci_info_version(struct bthci *);
+int bthci_info_version(struct bthci *, struct bt_hci_info *);
 int bthci_info_commands(struct bthci *);
 int bthci_info_features(struct bthci *);
 int bthci_info_extended_features(struct bthci *);

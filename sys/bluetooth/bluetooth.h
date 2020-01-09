@@ -18,8 +18,10 @@
 #ifndef _NET_BLUETOOTH_H_
 #define _NET_BLUETOOTH_H_
 
-#ifdef _KERNEL
-/* XXX ... */
+#include <sys/ioccom.h>
+
+#ifndef _KERNEL
+#include <sys/types.h>
 #endif /* _KERNEL */
 
 /* Bluetooth error codes */
@@ -55,5 +57,16 @@
 #define BT_ERR_LMPLL_INVALID			0x1E
 #define BT_ERR_UNKNOW				0x1F
 /* XXX ... */
+
+struct bt_hci_info {
+	uint8_t		state;
+	uint8_t		hci_version;
+	uint16_t	hci_revision;
+	uint8_t		lmp_version;
+	uint16_t	manufacturer;
+	uint16_t	lmp_revision;
+} __packed;
+
+#define DIOCBTINFO	_IOR('B', 1, struct bt_hci_info)
 
 #endif /* _NET_BLUETOOTH_H_ */

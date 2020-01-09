@@ -32,6 +32,7 @@
 #include <dev/usb/ubt.h>
 #include <dev/bluetooth/bluetoothreg.h>
 #include <dev/bluetooth/bluetoothvar.h>
+#include <bluetooth/bluetooth.h>
 #include <bluetooth/bthci.h>
 
 #ifdef BLUETOOTH_DEBUG
@@ -43,6 +44,7 @@
 #else
 #define DPRINTF(x)
 #endif
+
 #define DEVNAME(sc) ((sc)->sc_sc.sc_dev.dv_xname)
 
 struct ubt_softc {
@@ -479,7 +481,7 @@ ubt_cmd(struct device *sc, const struct bt_cmd *pkt)
 	if (err != USBD_NORMAL_COMPLETION) {
 		printf("%s: ubt_cmd, usbd_transfer, err=%s\n",
 		    DEVNAME(usc), usbd_errstr(err));
-		return (EIO);
+		return (EIO); /* XXX proper error code */
 	}
 
 	return (0);

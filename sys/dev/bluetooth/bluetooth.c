@@ -27,7 +27,9 @@
 
 #include <dev/bluetooth/bluetoothreg.h>
 #include <dev/bluetooth/bluetoothvar.h>
+#include <bluetooth/bluetooth.h>
 #include <bluetooth/bthci.h>
+
 
 #ifdef BLUETOOTH_DEBUG
 #define BT_DEBUG
@@ -38,7 +40,9 @@
 #else
 #define DPRINTF(x)
 #endif
-#define DEVNAME(sc) ((sc)->sc_dev.dv_xname)
+
+#define DEVNAME(sc)		((sc)->sc_dev.dv_xname)
+#define BLUETOOTHUNIT(n)	(minor(n))
 
 struct cfdriver bluetooth_cd = {
     NULL, "bluetooth", DV_DULL
@@ -74,6 +78,11 @@ bluetooth_detach(struct bluetooth_softc *sc)
 int
 bluetoothopen(dev_t dev, int flags, int fmt, struct proc *p)
 {
+	int unit;
+	unit = BLUETOOTHUNIT(dev);
+	if (unit >= bluetooth_cd.cd_ndevs ||    /* make sure it was attached */
+	    bluetooth_cd.cd_devs[unit] == NULL)
+		return (BT_ERR_UNKNOW); /* XXX proper error code, ENXIO */
 	return (0);
 }
 
@@ -85,7 +94,18 @@ int bluetoothclose(dev_t dev, int flags, int fmt, struct proc *p)
 int
 bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 {
-	return (0);
+	struct bluetooth_softc *sc;
+	int err = 0;
+	sc = bluetooth_cd.cd_devs[BLUETOOTHUNIT(dev)];
+	switch (cmd) {
+	case DIOCBTINFO:
+		err = bthci_info_version(sc->hci, (struct bt_hci_info*)addr);
+		break;
+	default:
+		err = BT_ERR_UNKNOW; /* XXX proper error code */
+		break;
+	}
+	return (err);
 }
 
 void
@@ -141,48 +161,6 @@ bt_init(struct bluetooth_softc *sc)
 		    DEVNAME(sc), err);
 		goto fail;
 	}
-	/*
-	if (bthci_info_version(hci)) {
-		printf("%s: bthci_attach get version fail\n",
-		    DEVNAME(hci));
-		return (EIO);
-	}
-	if (bthci_info_commands(hci)) {
-		printf("%s: bthci_attach get commands supported fail\n",
-		    DEVNAME(hci));
-		return (EIO);
-	}
-
-	if (bthci_info_features(hci)) {
-		printf("%s: bthci_attach get features supported fail\n",
-		    DEVNAME(hci));
-		return (EIO);
-	}
-
-	if (bthci_info_extended_features(hci)) {
-		printf("%s: bthci_attach get extended features supported fail\n",
-		    DEVNAME(hci));
-		return (EIO);
-	}
-
-	if (bthci_info_buffer(hci)) {
-		printf("%s: bthci_attach get buffer info fail\n",
-		    DEVNAME(hci));
-		return (EIO);
-	}
-
-	if (bthci_info_bdaddr(hci)) {
-		printf("%s: bthci_attach get bdaddr fail\n",
-		    DEVNAME(hci));
-		return (EIO);
-	}
-
-	if (bthci_lm_inquiry(hci, 30, 100)) {
-		printf("%s: bthci_attach inquiry fail\n",
-		    DEVNAME(hci));
-		return (EIO);
-	}
-	*/
  fail:
 	return (err);
 }
