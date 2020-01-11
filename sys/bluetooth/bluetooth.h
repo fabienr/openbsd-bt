@@ -98,6 +98,7 @@
 #define BT_FEATURES_BITMASK_LEN		8
 #define BT_EXTENDED_PAGE_MAX		3
 
+/* XXX implement kind of strbdaddr for printing */
 struct bluetooth_bdaddr {
 	uint8_t		bdaddr[BT_ADDR_LEN];
 };

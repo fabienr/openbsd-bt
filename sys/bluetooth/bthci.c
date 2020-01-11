@@ -38,12 +38,15 @@
 
 #ifdef BTHCI_DEBUG
 #define DPRINTF(x)	do { printf x; } while (0)
+#define IF_DPRINTF(c,x)	do { if (c) { printf x; } } while(0) /* XXX keep ? */
 #else
 #define DPRINTF(x)
+#define IF_DPRINTF(c,x)
 #endif
 
 #define DEVNAME(hci) ((hci)->sc->dv_xname)
 
+/* private registers */
 /* XXX consider adding unint8_t state even if not clearly specified in specs */
 struct bthci_cmd_complete {
 	uint8_t			buff_sz;
@@ -90,6 +93,7 @@ struct bthci_evt_state {
 #define DUMP_BT_EVT_STATE(hci, evt)
 #endif /* BTHCI_DEBUG */
 
+/* private functions */
 int bthci_enter(struct bthci *);
 int bthci_cmd(struct bthci *, uint8_t);
 int bthci_cmd_state(struct bthci *);
@@ -97,10 +101,12 @@ int bthci_cmd_complete(struct bthci *, void *, int);
 int bthci_void(struct bthci *, void *, int, int);
 void bthci_leave(struct bthci *);
 
+/* public api */
 void
 bthci_init(struct bthci *hci, struct device *sc, struct btbus *bus, int ipl)
 {
 	hci->sc = sc;
+	DPRINTF(("%s: bthci_init\n", DEVNAME(hci)));
 	hci->bus = bus;
 	mtx_init(&hci->mtx, ipl);
 	pool_init(&hci->evts, sizeof(struct bthci_evt), 0, ipl, 0,
@@ -114,6 +120,7 @@ bthci_init(struct bthci *hci, struct device *sc, struct btbus *bus, int ipl)
 void
 bthci_destroy(struct bthci *hci)
 {
+	DPRINTF(("%s: bthci_destroy\n", DEVNAME(hci)));
 	pool_destroy(&hci->evts);
 }
 
@@ -167,7 +174,7 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 			return;
 		}
 	}
-	/* catch event related to bthci_cmd pending and wakeup hci handler */
+	/* catch event related to bthci_cmd and wake it up */
 	if (hci->evt_filter == evt->head.op) {
 		if (hci->evt) {
 			DUMP_BT_EVT(DEVNAME(hci), evt);
@@ -177,18 +184,24 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 			pool_put(&hci->evts, evt);
 			return;
 		}
+		/* pass evt to bthci_cmd */
 		hci->evt = evt;
 		wakeup(hci);
 		return;
 	} else if (evt->head.op == BT_EVT_CMD_COMPLETE ||
 	    evt->head.op == BT_EVT_CMD_STATE) {
-		DUMP_BT_EVT(DEVNAME(hci), evt);
-		if (evt->head.op == BT_EVT_CMD_COMPLETE)
+		if (evt->head.op == BT_EVT_CMD_COMPLETE) {
+			cmd_complete = (struct bthci_evt_complete *) evt;
+			DUMP_BT_EVT_COMPLETE(hci, cmd_complete);
 			printf("%s: unrelated command complete event, drop\n",
 			    DEVNAME(hci));
-		else
+		} else {
+			cmd_state = (struct bthci_evt_state *) evt;
+			DUMP_BT_EVT_STATE(hci, cmd_state);
 			printf("%s: unrelated command state event, drop\n",
 			    DEVNAME(hci));
+		}
+		/* throw error to bthci_cmd */
 		wakeup(hci);
 		pool_put(&hci->evts, evt);
 		return;
@@ -207,9 +220,8 @@ bthci_read_evt(struct bthci *hci)
 	evt = SIMPLEQ_FIRST(&hci->fifo);
 	if (evt) {
 		/* XXX debug */
-		printf("%s: bthci_read_evt :\n",
-		    DEVNAME(hci));
-		DUMP_BT_EVT(DEVNAME(hci), (struct bt_evt*)evt);
+		DPRINTF(("%s: bthci_read_evt\n", DEVNAME(hci)));
+		/*DUMP_BT_EVT(DEVNAME(hci), (struct bt_evt*)evt);*/
 		SIMPLEQ_REMOVE_HEAD(&hci->fifo, fifo);
 	}
 	mtx_leave(&hci->mtx);
@@ -235,6 +247,8 @@ bthci_lc_inquiry(struct bthci *hci, uint64_t timeout, int limit)
 		uint8_t limit;
 	} * inquiry;
 	int err;
+	DPRINTF(("%s: bthci_lc_inquiry(%llu, %d)\n",
+	    DEVNAME(hci), timeout, limit));
 	if ((err = bthci_enter(hci)) != 0)
 		return (err);
 	if ((timeout / 1000000000ULL) * 100 / 128 > 0x30 || timeout < 0) {
@@ -278,9 +292,15 @@ bthci_lc_remote_name(struct bthci *hci, struct bluetooth_bdaddr *bdaddr,
 		uint16_t		clock;
 	} resolve;
 	int err;
+#ifdef BTHCI_DEBUG
+	int i;
+	DPRINTF(("%s: bthci_lc_remote_name(", DEVNAME(hci)));
+	for (i = BT_ADDR_LEN; --i >= 0;)
+		DPRINTF(("%0X%c", bdaddr->bdaddr[i], (i)?':':' '));
+	DPRINTF((", %u, %u)\n", mode, clock));
+#endif /* BTHCI_DEBUG */
 	if ((err = bthci_enter(hci)) != 0)
 		return (err);
-
 	hci->cmd.head.op = htole16(BT_HCI_LC_REMOTE_NAME);
 	memcpy(&resolve.addr, bdaddr, sizeof(*bdaddr));
 	resolve.mode = mode;
@@ -300,6 +320,7 @@ bthci_lc_remote_name(struct bthci *hci, struct bluetooth_bdaddr *bdaddr,
 int
 bthci_cb_reset(struct bthci *hci)
 {
+	DPRINTF(("%s: bthci_cb_reset\n", DEVNAME(hci)));
 	return (bthci_void(hci, NULL, 0, BT_HCI_CB_RESET));
 }
 
@@ -307,6 +328,7 @@ bthci_cb_reset(struct bthci *hci)
 int
 bthci_info_version(struct bthci *hci, struct bt_hci_info_version *info)
 {
+	DPRINTF(("%s: bthci_info_version\n", DEVNAME(hci)));
 	return (bthci_void(hci, info, sizeof(*info), BT_HCI_INFO_VERSION));
 }
 
@@ -314,6 +336,7 @@ bthci_info_version(struct bthci *hci, struct bt_hci_info_version *info)
 int
 bthci_info_commands(struct bthci *hci, struct bt_hci_info_commands *info)
 {
+	DPRINTF(("%s: bthci_info_commands\n", DEVNAME(hci)));
 	return (bthci_void(hci, info, sizeof(*info), BT_HCI_INFO_COMMANDS));
 }
 
@@ -321,6 +344,7 @@ bthci_info_commands(struct bthci *hci, struct bt_hci_info_commands *info)
 int
 bthci_info_features(struct bthci *hci, struct bt_hci_info_features *info)
 {
+	DPRINTF(("%s: bthci_info_features\n", DEVNAME(hci)));
 	return (bthci_void(hci, info, sizeof(*info), BT_HCI_INFO_FEATURES));
 }
 
@@ -332,6 +356,7 @@ bthci_info_extended(struct bthci *hci, int p, struct bt_hci_info_extended *info)
 		uint8_t page;
 	} * command;
 	int err;
+	DPRINTF(("%s: bthci_info_extended\n", DEVNAME(hci)));
 	if ((err = bthci_enter(hci)) != 0)
 		return (err);
 	if (p > 2) {
@@ -364,6 +389,7 @@ int
 bthci_info_buffer(struct bthci *hci, struct bt_hci_info_buffer *info)
 {
 	int err;
+	DPRINTF(("%s: bthci_info_buffer\n", DEVNAME(hci)));
 	err = bthci_void(hci, info, sizeof(*info), BT_HCI_INFO_BUFFER);
 	if (err == 0) {
 		info->acl_size = le16toh(info->acl_size);
@@ -377,9 +403,11 @@ bthci_info_buffer(struct bthci *hci, struct bt_hci_info_buffer *info)
 int
 bthci_info_bdaddr(struct bthci *hci, struct bt_hci_info_bdaddr *info)
 {
+	DPRINTF(("%s: bthci_info_bdaddr\n", DEVNAME(hci)));
 	return (bthci_void(hci, info, sizeof(*info), BT_HCI_INFO_BDADDR));
 }
 
+/* private functions */
 int
 bthci_enter(struct bthci *hci)
 {
@@ -399,7 +427,7 @@ bthci_cmd(struct bthci *hci, uint8_t evt_filter)
 	int err;
 	hci->evt_filter = evt_filter;
 	/* XXX debug */
-	DUMP_BT_CMD(DEVNAME(hci), &hci->cmd);
+	/* DUMP_BT_CMD(DEVNAME(hci), &hci->cmd); */
 	mtx_leave(&hci->mtx);
 	err = hci->bus->cmd(hci->sc, &hci->cmd);
 	mtx_enter(&hci->mtx);
@@ -408,12 +436,14 @@ bthci_cmd(struct bthci *hci, uint8_t evt_filter)
 	if (hci->evt == NULL)
 		err = msleep_nsec(hci, &hci->mtx, BTPRI,
 		    DEVNAME(hci), BT_TIMEOUT);
-	if (hci->evt) {
-		/* XXX debug */
-		printf("%s: bthci_cmd get event :\n",
-		    DEVNAME(hci));
-		DUMP_BT_EVT(DEVNAME(hci), hci->evt);
+	if (hci->evt == NULL) {
+		printf("%s: bthci_cmd, no event, err=%d\n",
+		    DEVNAME(hci), err);
+		goto fail;
 	}
+	DPRINTF(("%s: bthci_cmd event\n", DEVNAME(hci)));
+	/* XXX debug */
+	/* DUMP_BT_EVT(DEVNAME(hci), hci->evt);*/
  fail:
 	return (err);
 }
