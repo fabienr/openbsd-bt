@@ -30,9 +30,9 @@
 #include <dev/usb/usbdevs.h>
 
 #include <dev/usb/ubt.h>
+#include <bluetooth/bluetooth.h>
 #include <dev/bluetooth/bluetoothreg.h>
 #include <dev/bluetooth/bluetoothvar.h>
-#include <bluetooth/bluetooth.h>
 #include <bluetooth/bthci.h>
 
 #ifdef BLUETOOTH_DEBUG
@@ -481,6 +481,8 @@ ubt_cmd(struct device *sc, const struct bt_cmd *pkt)
 
 	err = usbd_do_request_flags(usc->sc_udev, &req, (void*)pkt,
 	    USBD_FORCE_SHORT_XFER, NULL, USBD_DEFAULT_TIMEOUT);
+	if (err == USBD_TIMEOUT)
+		return (EAGAIN);
 	if (err != USBD_NORMAL_COMPLETION) {
 		printf("%s: ubt_cmd, usbd_transfer, err=%s\n",
 		    DEVNAME(usc), usbd_errstr(err));
