@@ -47,7 +47,8 @@ struct bluetooth_softc {
 	struct device			 sc_dev;
 	struct bthci			*hci;
 	struct rwlock			 lock; /* XXX actually, a mutex feet */
-	int				 state;
+	int				 state; /* manged by userland dev io */
+	int				 count; /* internal async command count */
 	struct bluetooth_dev_ios	 fifo_tx;
 	struct bluetooth_dev_ios	 fifo_rx; /* XXX not used */
 };
