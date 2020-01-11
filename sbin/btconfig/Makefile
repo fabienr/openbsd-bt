@@ -1,7 +1,7 @@
 #	$OpenBSD$
 
 PROG=	btconfig
-SRCS=	btconfig.c btstrings.c
+SRCS=	btconfig.c btstrings.c btutil.c
 MAN=	btconfig.8
 
 LDADD=	-lutil

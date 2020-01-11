@@ -15,10 +15,13 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#define BTPRI			MAXPRI /* XXX to change for something else */
 #define BT_TIMEOUT		SEC_TO_NSEC(5)
 #define BT_STATE_INIT		0
 #define BT_STATE_DYING		1
 #define BT_STATE_WAITING	2
+#define BT_STATE_DEVOPEN	3
+#define BT_STATE_INQUIRY	4
 
 #define BT_EVTS_POOLSIZE	32
 
@@ -33,11 +36,20 @@ struct btbus {
 	int (*sco)(struct device *, const struct bt_sco *);
 };
 
+struct bluetooth_dev_io {
+	size_t				 size;
+	void				*buf;
+	SIMPLEQ_ENTRY(bluetooth_dev_io)	 fifo;
+};
+SIMPLEQ_HEAD(bluetooth_dev_ios, bluetooth_dev_io);
+
 struct bluetooth_softc {
-	struct device		 sc_dev;
-	struct bthci		*hci;
-	struct rwlock		 lock;
-	int			 state;
+	struct device			 sc_dev;
+	struct bthci			*hci;
+	struct rwlock			 lock; /* XXX actually, a mutex feet */
+	int				 state;
+	struct bluetooth_dev_ios	 fifo_tx;
+	struct bluetooth_dev_ios	 fifo_rx; /* XXX not used */
 };
 
 void bluetooth_attach(struct bluetooth_softc *,  struct bthci *);

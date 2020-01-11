@@ -93,19 +93,47 @@
 #define BT_ERR_MAC_CONNECTION_FAILED				BT_ERR_TOH(0x3F)
 #define BT_ERR_COARSE_CLOCK_ADJ_REJECTED_USING_CLOCK_DRAGGING	BT_ERR_TOH(0x40)
 
-#define BT_ADDR_LEN	6
+#define BT_ADDR_LEN			6
+#define BT_COMMANDS_BITMASK_LEN		64
+#define BT_FEATURES_BITMASK_LEN		8
+#define BT_EXTENDED_PAGE_MAX		3
+
 struct bluetooth_bdaddr {
 	uint8_t		bdaddr[BT_ADDR_LEN];
 };
 
+struct bluetooth_class {
+	uint8_t		fields[3];
+};
+
 struct bluetooth_info {
 	struct bluetooth_bdaddr	bt_addr;
-	uint16_t		bt_manufacturer;
-	uint8_t			hci_version;
-	uint16_t		hci_revision;
-	uint8_t			lmp_version;
-	uint16_t		lmp_revision;
+	uint16_t	bt_manufacturer; /* see btstrings.c */
+	uint8_t		hci_version; /* see btstrings.c */
+	int		hci_revision;
+	uint8_t		lmp_version; /* see btstrings.c */
+	int		lmp_revision;
+	int		acl_size;
+	int		acl_bufferlen;
+	int		sco_size;
+	int		sco_bufferlen;
 };
 #define DIOCBTINFO	_IOR('B', 1, struct bluetooth_info)
+
+struct bluetooth_info_extended {
+	int		flow_control_lag; /* in bytes */
+	uint8_t		features[BT_EXTENDED_PAGE_MAX][BT_FEATURES_BITMASK_LEN];
+	uint8_t		commands[BT_COMMANDS_BITMASK_LEN]; /* see btstrings.c */
+};
+#define DIOCBTINFOEXT	_IOR('B', 2, struct bluetooth_info_extended)
+
+/* parameter void */
+#define DIOCBTINQUIRY	_IO('B', 3)
+/* data to be read after */
+struct bluetooth_device { /* XXX to consolidate in a database with unit id */
+	struct bluetooth_bdaddr	bt_addr;
+	struct bluetooth_class	bt_class;
+	char			name[248]; /* XXX see BT_EVT_MAX_PAYLOAD */
+};
 
 #endif /* _NET_BLUETOOTH_H_ */

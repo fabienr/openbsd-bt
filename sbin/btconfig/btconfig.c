@@ -27,6 +27,7 @@
 #include <bluetooth/bluetooth.h>
 
 #include "btstrings.h"
+#include "btutil.h"
 
 #define NDEV	4
 #define DEVNAME	"bluetooth"
@@ -43,6 +44,7 @@ int bthci_open(int);
 
 void btconfig_open(int, int);
 void btconfig_query(int, int);
+void btconfig_inquiry(int, int);
 
 static void __dead
 usage(void)
@@ -69,13 +71,16 @@ main(int argc, char **argv)
 		}
 		return (0);
 	}
-	while ((ch = getopt(argc, argv, "oq")) != -1) {
+	while ((ch = getopt(argc, argv, "oqi")) != -1) {
 		switch (ch) {
 		case 'o':
 			cmd = BTCONFIG_OPEN;
 			break;
 		case 'q':
 			cmd = BTCONFIG_QUERY;
+			break;
+		case 'i':
+			cmd = BTCONFIG_INQUIRY;
 			break;
 		default:
 			usage();
@@ -109,6 +114,13 @@ main(int argc, char **argv)
 		break;
 	case BTCONFIG_QUERY:
 		/* open and display controller extended information */
+		btconfig_open(dev, unit);
+		printf("\n");
+		btconfig_query(dev, unit);
+		break;
+	case BTCONFIG_INQUIRY:
+		/* start inquiry and display devices */
+		btconfig_inquiry(dev, unit);
 		break;
 	};
 	return (0);
@@ -128,22 +140,87 @@ bthci_open(int minor)
 }
 
 void
-btconfig_open(int dev, int u)
+btconfig_open(int dev, int unit)
 {
 	struct bluetooth_info info;
 	int err, i;
 	err = ioctl(dev, DIOCBTINFO, &info);
 	if (err) {
-		warn("DIOCBTINFO");
+		btwarn("DIOCBTINFO");
 		return;
 	}
-	printf("%0X", u);
+	printf("%0X#", unit);
 	for (i = 0; i < BT_ADDR_LEN; i++)
-		printf("%s%0X", ((i)?":":"# "), info.bt_addr.bdaddr[i]);
-	printf(" manufacturer %s\n"
-	    "hci %s (rev %d)\n"
-	    "lmp %s (rev %d)\n",
+		printf("%c%0X", ((i)?':':' '), info.bt_addr.bdaddr[i]);
+	printf(" %s\n"
+	    "HCI %s (rev %d)\n"
+	    "LMP %s (rev %d)\n"
+	    "ACL buffer of %d packets with %d bytes payload\n"
+	    "SCO buffer of %d packets with %d bytes payload\n",
 	    btmanufacturer(info.bt_manufacturer),
 	    bthciversion(info.hci_version), info.hci_revision,
-	    btlmpversion(info.lmp_version), info.lmp_revision);
+	    btlmpversion(info.lmp_version), info.lmp_revision,
+	    info.acl_bufferlen, info.acl_size,
+	    info.sco_bufferlen, info.sco_size);
+}
+
+void
+btconfig_query(int dev, int unit)
+{
+	struct bluetooth_info_extended info;
+	int err, i, j;
+	const char *desc;
+
+	err = ioctl(dev, DIOCBTINFOEXT, &info);
+	if (err) {
+		btwarn("DIOCBTINFOEXT");
+		return;
+	}
+	printf("*** Flow control lag : %d bytes\n", info.flow_control_lag);
+	printf("*** Features not supported :\n");
+	for (i = 0; i < BT_EXTENDED_PAGE_MAX*BT_FEATURES_BITMASK_LEN; i++) {
+		for (j = 0; j < 8; j++) {
+			desc = btfeaturebitmask(i, j);
+			if (desc[0] == 'R') /* Reserved for future use */
+				continue;
+			if ((((uint8_t *)info.features)[i] & (0x01<<j)) == 0)
+				printf("%s : No\n", desc);
+		}
+	}
+	printf("*** Commands not supported :\n");
+	for (i = 0; i < BT_COMMANDS_BITMASK_LEN; i++) {
+		for (j = 0; j < 8; j++) {
+			desc = btcommandbitmask(i, j);
+			if (desc[0] == 'R') /* Reserved for future use */
+				continue;
+			if ((info.commands[i] & (0x01<<j)) == 0)
+				printf("%s : No\n", desc);
+		}
+	}
+}
+
+void
+btconfig_inquiry(int dev, int unit)
+{
+	struct bluetooth_device *device;
+	int i;
+	ssize_t k;
+
+	if (ioctl(dev, DIOCBTINQUIRY, NULL)) {
+		btwarn("DIOCBTINQUIRY");
+		return;
+	}
+	device = malloc(sizeof(*device));
+	while((k = read(dev, device, sizeof(*device))) == sizeof(*device)) {
+		printf("%0X#", unit);
+		for (i = 0; i < BT_ADDR_LEN; i++)
+			printf("%c%0X", ((i)?':':' '), device->bt_addr.bdaddr[i]);
+		printf(" %s\n", device->name);
+		fflush(stdout);
+	}
+	if (k != 0) {
+		btwarn("read device");
+		return;
+	}
+	return;
 }

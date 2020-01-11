@@ -15,9 +15,4 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-const char *btstrerror(int);
-const char *btmanufacturer(int);
-const char *bthciversion(int);
-const char *btlmpversion(int);
-const char *btcommandbitmask(uint8_t, uint8_t);
-const char *btfeaturebitmask(uint8_t, uint8_t);
+void btwarn(const char *, ...);

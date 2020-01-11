@@ -25,6 +25,7 @@
 #include <sys/device.h>
 #include <sys/systm.h>
 #include <sys/mutex.h>
+#include <sys/malloc.h>
 
 #include <dev/bluetooth/bluetoothreg.h>
 #include <dev/bluetooth/bluetoothvar.h>
@@ -43,6 +44,7 @@
 
 #define DEVNAME(hci) ((hci)->sc->dv_xname)
 
+/* XXX consider adding unint8_t state even if not clearly specified in specs */
 struct bthci_cmd_complete {
 	uint8_t			buff_sz;
 	uint16_t		op;
@@ -90,7 +92,9 @@ struct bthci_evt_state {
 
 int bthci_enter(struct bthci *);
 int bthci_cmd(struct bthci *, uint8_t);
+int bthci_cmd_state(struct bthci *);
 int bthci_cmd_complete(struct bthci *, void *, int);
+int bthci_void(struct bthci *, void *, int, int);
 void bthci_leave(struct bthci *);
 
 void
@@ -131,6 +135,7 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 	struct bthci_evt_complete *cmd_complete;
 	struct bthci_evt_state *cmd_state;
 
+	/* check BT_EVT_CMD_COMPLETE|_STATE event consistency */
 	if (evt->head.op == BT_EVT_CMD_COMPLETE) {
 		if (evt->head.len < sizeof(struct bthci_cmd_complete)) {
 			DUMP_BT_EVT(DEVNAME(hci), evt);
@@ -153,7 +158,7 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 			    DEVNAME(hci));
 			return;
 		}
-		cmd_state = (struct bthci_evt_state *) &evt;
+		cmd_state = (struct bthci_evt_state *) evt;
 		if (cmd_state->event.op != hci->cmd.head.op) {
 			DUMP_BT_EVT_STATE(hci, cmd_state);
 			printf("%s: unexpected command state event, drop\n",
@@ -162,6 +167,7 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 			return;
 		}
 	}
+	/* catch event related to bthci_cmd pending and wakeup hci handler */
 	if (hci->evt_filter == evt->head.op) {
 		if (hci->evt) {
 			DUMP_BT_EVT(DEVNAME(hci), evt);
@@ -171,8 +177,6 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 			pool_put(&hci->evts, evt);
 			return;
 		}
-		/* XXX debug */
-		DUMP_BT_EVT(DEVNAME(hci), evt);
 		hci->evt = evt;
 		wakeup(hci);
 		return;
@@ -189,10 +193,9 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 		pool_put(&hci->evts, evt);
 		return;
 	}
-	/* XXX debug */
-	DUMP_BT_EVT(DEVNAME(hci), evt);
-	/* XXX SIMPLEQ_INSERT_TAIL(&hci->fifo, (struct bthci_evt *)evt, fifo); */
-	pool_put(&hci->evts, evt);
+	/* push event on the queue for later processing through bthci_read_evt */
+	/* XXX implement sleep handle */
+	SIMPLEQ_INSERT_TAIL(&hci->fifo, (struct bthci_evt *)evt, fifo);
 }
 
 struct bt_evt *
@@ -202,8 +205,13 @@ bthci_read_evt(struct bthci *hci)
 
 	mtx_enter(&hci->mtx);
 	evt = SIMPLEQ_FIRST(&hci->fifo);
-	if (evt)
+	if (evt) {
+		/* XXX debug */
+		printf("%s: bthci_read_evt :\n",
+		    DEVNAME(hci));
+		DUMP_BT_EVT(DEVNAME(hci), (struct bt_evt*)evt);
 		SIMPLEQ_REMOVE_HEAD(&hci->fifo, fifo);
+	}
 	mtx_leave(&hci->mtx);
 	return ((struct bt_evt *)evt);
 }
@@ -219,47 +227,72 @@ bthci_read_evt(struct bthci *hci)
 #define BT_HCI_INQUIRY_LAP_GIAC_0	0x33
 #define BT_HCI_INQUIRY_LAP_LIAC_0	0x00
 int
-bthci_lc_inquiry(struct bthci *hci, int timeout, int limit)
+bthci_lc_inquiry(struct bthci *hci, uint64_t timeout, int limit)
 {
-	int err;
-	struct bthci_evt_state *cmd_state;
-	struct hci_lc_inquiry {
+	struct {
 		uint8_t lap[3];
 		uint8_t timeout;
 		uint8_t limit;
 	} * inquiry;
-	bthci_enter(hci);
-	if (timeout * 100 / 128 > 0x30 || timeout < 0) {
-		printf("%s: bthci_inquiry invalid timeout 0 > %d > 0x30\n",
-		    DEVNAME(hci), timeout);
-		return (EINVAL);
+	int err;
+	if ((err = bthci_enter(hci)) != 0)
+		return (err);
+	if ((timeout / 1000000000ULL) * 100 / 128 > 0x30 || timeout < 0) {
+		printf("%s: bthci_inquiry invalid timeout 0 > %llu > 0x30\n",
+		    DEVNAME(hci), (timeout / 1000000000ULL));
+		err = EINVAL;
+		goto fail;
 	}
 	if (limit > 0xFF || limit < 0) {
 		printf("%s: bthci_inquiry invalid limit 0 > %d > 0xFF\n",
-		    DEVNAME(hci), timeout);
-		return (EINVAL);
-	}
-	if (hci->cmd.head.op != 0) {
-		printf("%s: bthci command pending, return\n",
-		    DEVNAME(hci));
-		return (EBUSY);
+		    DEVNAME(hci), limit);
+		err = EINVAL;
+		goto fail;
 	}
 	hci->cmd.head.op = htole16(BT_HCI_LC_INQUIRY);
-	hci->cmd.head.len = sizeof(struct hci_lc_inquiry);
-	inquiry = (struct hci_lc_inquiry *)&hci->cmd.data;
+	hci->cmd.head.len = sizeof(*inquiry);
+	inquiry = (void *)&hci->cmd.data;
 	inquiry->lap[0] = BT_HCI_INQUIRY_LAP_GIAC_0;
 	inquiry->lap[1] = BT_HCI_INQUIRY_LAP_1;
 	inquiry->lap[2] = BT_HCI_INQUIRY_LAP_2;
-	inquiry->timeout = timeout * 100 / 128;
+	inquiry->timeout = (timeout / 1000000000ULL) * 100 / 128;
 	inquiry->limit = limit;
-	err = bthci_cmd(hci, BT_EVT_CMD_STATE);
+	if ((err = bthci_cmd(hci, BT_EVT_CMD_STATE)))
+		goto fail;
+	if ((err = bthci_cmd_state(hci)))
+		goto fail;
+ fail:
 	bthci_leave(hci);
-	if (hci->evt) {
-		cmd_state = (struct bthci_evt_state *)hci->evt;
-		err = BT_ERR_TOH(cmd_state->event.state);
-		pool_put(&hci->evts, hci->evt);
-		hci->evt = NULL;
-	}
+	return (err);
+}
+
+#define BT_HCI_LC_REMOTE_NAME	(BT_HCI_OCF_REMOTE_NAME|(BT_HCI_OGF_LC<<10))
+int
+bthci_lc_remote_name(struct bthci *hci, struct bluetooth_bdaddr *bdaddr,
+    uint8_t mode, uint16_t clock)
+{
+	struct {
+		struct bluetooth_bdaddr	addr;
+		uint8_t			mode;
+		uint8_t			reserved;
+		uint16_t		clock;
+	} resolve;
+	int err;
+	if ((err = bthci_enter(hci)) != 0)
+		return (err);
+
+	hci->cmd.head.op = htole16(BT_HCI_LC_REMOTE_NAME);
+	memcpy(&resolve.addr, bdaddr, sizeof(*bdaddr));
+	resolve.mode = mode;
+	resolve.clock = clock;
+	hci->cmd.head.len = sizeof(resolve);
+	memcpy(hci->cmd.data, &resolve, sizeof(resolve));
+	if ((err = bthci_cmd(hci, BT_EVT_CMD_STATE)))
+		goto fail;
+	if ((err = bthci_cmd_state(hci)))
+		goto fail;
+ fail:
+	bthci_leave(hci);
 	return (err);
 }
 
@@ -267,89 +300,76 @@ bthci_lc_inquiry(struct bthci *hci, int timeout, int limit)
 int
 bthci_cb_reset(struct bthci *hci)
 {
-	int err, state = 0;
-	bthci_enter(hci);
-	hci->cmd.head.op = htole16(BT_HCI_CB_RESET);
-	hci->cmd.head.len = 0;
-	if ((err = bthci_cmd(hci, BT_EVT_CMD_COMPLETE)))
-		goto fail;
-	if ((err = bthci_cmd_complete(hci, &state, 1)))
-		goto fail;
-	err = BT_ERR_TOH(state);
- fail:
-	bthci_leave(hci);
-	return (err);
+	return (bthci_void(hci, NULL, 0, BT_HCI_CB_RESET));
 }
 
 #define BT_HCI_INFO_VERSION	(BT_HCI_OCF_READ_VERSION|(BT_HCI_OGF_INFO<<10))
 int
 bthci_info_version(struct bthci *hci, struct bt_hci_info_version *info)
 {
+	return (bthci_void(hci, info, sizeof(*info), BT_HCI_INFO_VERSION));
+}
+
+#define BT_HCI_INFO_COMMANDS	(BT_HCI_OCF_READ_COMMANDS|(BT_HCI_OGF_INFO<<10))
+int
+bthci_info_commands(struct bthci *hci, struct bt_hci_info_commands *info)
+{
+	return (bthci_void(hci, info, sizeof(*info), BT_HCI_INFO_COMMANDS));
+}
+
+#define BT_HCI_INFO_FEATURES	(BT_HCI_OCF_READ_FEATURES|(BT_HCI_OGF_INFO<<10))
+int
+bthci_info_features(struct bthci *hci, struct bt_hci_info_features *info)
+{
+	return (bthci_void(hci, info, sizeof(*info), BT_HCI_INFO_FEATURES));
+}
+
+#define BT_HCI_INFO_EXTENDED	(BT_HCI_OCF_READ_EXTENDED|(BT_HCI_OGF_INFO<<10))
+int
+bthci_info_extended(struct bthci *hci, int p, struct bt_hci_info_extended *info)
+{
+	struct hci_info_extended {
+		uint8_t page;
+	} * command;
 	int err;
-	bthci_enter(hci);
-	hci->cmd.head.op = htole16(BT_HCI_INFO_VERSION);
-	hci->cmd.head.len = 0;
+	if ((err = bthci_enter(hci)) != 0)
+		return (err);
+	if (p > 2) {
+		printf("%s: bthci_info_extended invalid page %d > 2\n",
+		    DEVNAME(hci), p);
+		err = (EINVAL);
+		goto fail;
+	}
+	hci->cmd.head.op = htole16(BT_HCI_INFO_EXTENDED);
+	hci->cmd.head.len = sizeof(struct hci_info_extended);
+	command = (struct hci_info_extended *)&hci->cmd.data;
+	command->page = (uint8_t)p;
 	if ((err = bthci_cmd(hci, BT_EVT_CMD_COMPLETE)))
 		goto fail;
 	if ((err = bthci_cmd_complete(hci, info, sizeof(*info))))
 		goto fail;
-	info->hci_revision = letoh16(info->hci_revision);
-	info->bt_manufacturer = letoh16(info->bt_manufacturer);
-	info->lmp_revision = letoh16(info->lmp_revision);
+	err = BT_ERR_TOH(*(uint8_t *)info);
+	if (info->page != command->page) {
+		printf("%s : bthci_info_extended invalid answer page %d != %d\n",
+		    DEVNAME(hci), info->page, command->page);
+		err = EPROTO;
+	}
  fail:
 	bthci_leave(hci);
 	return (err);
 }
 
-#define BT_HCI_INFO_COMMANDS	(BT_HCI_OCF_READ_COMMANDS|(BT_HCI_OGF_INFO<<10))
+#define BT_HCI_INFO_BUFFER	(BT_HCI_OCF_READ_BUFFER|(BT_HCI_OGF_INFO<<10))
 int
-bthci_info_commands(struct bthci *hci)
+bthci_info_buffer(struct bthci *hci, struct bt_hci_info_buffer *info)
 {
 	int err;
-	bthci_enter(hci);
-	hci->cmd.head.op = htole16(BT_HCI_INFO_COMMANDS);
-	hci->cmd.head.len = 0;
-	err = bthci_cmd(hci, BT_EVT_CMD_COMPLETE);
-	bthci_leave(hci);
-	return (err);
-}
-
-#define BT_HCI_INFO_FEATURES	(BT_HCI_OCF_READ_FEATURES|(BT_HCI_OGF_INFO<<10))
-int
-bthci_info_features(struct bthci *hci)
-{
-	int err;
-	bthci_enter(hci);
-	hci->cmd.head.op = htole16(BT_HCI_INFO_FEATURES);
-	hci->cmd.head.len = 0;
-	err = bthci_cmd(hci, BT_EVT_CMD_COMPLETE);
-	bthci_leave(hci);
-	return (err);
-}
-
-#define BT_HCI_INFO_FEATURES_E	(BT_HCI_OCF_READ_FEATURES_E|(BT_HCI_OGF_INFO<<10))
-int
-bthci_info_extended_features(struct bthci *hci)
-{
-	int err;
-	bthci_enter(hci);
-	hci->cmd.head.op = htole16(BT_HCI_INFO_FEATURES_E);
-	hci->cmd.head.len = 0;
-	err = bthci_cmd(hci, BT_EVT_CMD_COMPLETE);
-	bthci_leave(hci);
-	return (err);
-}
-
-#define BT_HCI_INFO_BUFFER	(BT_HCI_OCF_READ_BUFFER_SIZE|(BT_HCI_OGF_INFO<<10))
-int
-bthci_info_buffer(struct bthci *hci)
-{
-	int err;
-	mtx_enter(&hci->mtx);
-	hci->cmd.head.op = htole16(BT_HCI_INFO_BUFFER);
-	hci->cmd.head.len = 0;
-	err = bthci_cmd(hci, BT_EVT_CMD_COMPLETE);
-	bthci_leave(hci);
+	err = bthci_void(hci, info, sizeof(*info), BT_HCI_INFO_BUFFER);
+	if (err == 0) {
+		info->acl_size = le16toh(info->acl_size);
+		info->acl_bufferlen = le16toh(info->acl_bufferlen);
+		info->sco_bufferlen = le16toh(info->sco_bufferlen);
+	}
 	return (err);
 }
 
@@ -357,17 +377,7 @@ bthci_info_buffer(struct bthci *hci)
 int
 bthci_info_bdaddr(struct bthci *hci, struct bt_hci_info_bdaddr *info)
 {
-	int err;
-	bthci_enter(hci);
-	hci->cmd.head.op = htole16(BT_HCI_INFO_BDADDR);
-	hci->cmd.head.len = 0;
-	if ((err = bthci_cmd(hci, BT_EVT_CMD_COMPLETE)))
-		goto fail;
-	if ((err = bthci_cmd_complete(hci, info, sizeof(*info))))
-		goto fail;
- fail:
-	bthci_leave(hci);
-	return (err);
+	return (bthci_void(hci, info, sizeof(*info), BT_HCI_INFO_BDADDR));
 }
 
 int
@@ -396,8 +406,33 @@ bthci_cmd(struct bthci *hci, uint8_t evt_filter)
 	if (err)
 		goto fail;
 	if (hci->evt == NULL)
-		err = msleep_nsec(hci, &hci->mtx, MAXPRI, "bthci", BT_TIMEOUT);
+		err = msleep_nsec(hci, &hci->mtx, BTPRI,
+		    DEVNAME(hci), BT_TIMEOUT);
+	if (hci->evt) {
+		/* XXX debug */
+		printf("%s: bthci_cmd get event :\n",
+		    DEVNAME(hci));
+		DUMP_BT_EVT(DEVNAME(hci), hci->evt);
+	}
  fail:
+	return (err);
+}
+
+int
+bthci_cmd_state(struct bthci *hci)
+{
+	int err = 0;
+	struct bthci_evt_state *cmd_state;
+	if (hci->evt == NULL) {
+		/* XXX should not happen */
+		printf("%s: cmd_complete call with no event\n",
+		    DEVNAME(hci));
+		return (EPROTO);
+	}
+	cmd_state = (struct bthci_evt_state *)hci->evt;
+	err = BT_ERR_TOH(cmd_state->event.state);
+	pool_put(&hci->evts, hci->evt);
+	hci->evt = NULL;
 	return (err);
 }
 
@@ -410,20 +445,47 @@ bthci_cmd_complete(struct bthci *hci, void *dest, int len)
 		/* XXX should not happen */
 		printf("%s: cmd_complete call with no event\n",
 		    DEVNAME(hci));
-		return (EPROTO); /* XXX proper error code */
+		return (EPROTO);
 	}
 	cmd_complete = (struct bthci_evt_complete *)hci->evt;
 	if (cmd_complete->head.len - sizeof(struct bthci_cmd_complete) != len) {
-		printf("%s: invalid event parameter len %d != %d\n",
-		    DEVNAME(hci), (int)(cmd_complete->head.len -
-		    sizeof(struct bthci_cmd_complete)), len);
-		err = EPROTO; /* XXX proper error code */
-		goto fail;
+		if ((cmd_complete->head.len
+		    - sizeof(struct bthci_cmd_complete)) != 1) {
+			printf("%s: invalid event parameter len %d != %d\n",
+			    DEVNAME(hci), (int)(cmd_complete->head.len -
+			    sizeof(struct bthci_cmd_complete)), len);
+			err = EPROTO;
+			goto fail;
+		}
+		len = 1;
 	}
-	memcpy(dest, cmd_complete->data, len);
+	if (dest && len)
+		memcpy(dest, cmd_complete->data, len);
  fail:
 	pool_put(&hci->evts, hci->evt);
 	hci->evt = NULL;
+	return (err);
+}
+
+int
+bthci_void(struct bthci *hci, void *info, int len, int op)
+{
+	int err;
+	if ((err = bthci_enter(hci)) != 0)
+		return (err);
+	hci->cmd.head.op = htole16(op);
+	hci->cmd.head.len = 0;
+	if ((err = bthci_cmd(hci, BT_EVT_CMD_COMPLETE)))
+		goto fail;
+	if (info == NULL) {
+		info = &err;
+		len = 1;
+	}
+	if ((err = bthci_cmd_complete(hci, info, len)))
+		goto fail;
+	err = BT_ERR_TOH(*(uint8_t *)info);
+ fail:
+	bthci_leave(hci);
 	return (err);
 }
 

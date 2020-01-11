@@ -38,6 +38,7 @@
 /* Bluetooth Link Control commands */
 #define BT_HCI_OGF_LC			0x01
 #define BT_HCI_OCF_INQUIRY		0x0001
+#define BT_HCI_OCF_REMOTE_NAME		0x0019
 /* Bluetooth Link Policy commands */
 #define BT_HCI_OGF_LP			0x02
 /* Bluetooth Controller & Baseband commands */
@@ -48,8 +49,8 @@
 #define BT_HCI_OCF_READ_VERSION		0x0001
 #define BT_HCI_OCF_READ_COMMANDS	0x0002
 #define BT_HCI_OCF_READ_FEATURES	0x0003
-#define BT_HCI_OCF_READ_FEATURES_E	0x0004
-#define BT_HCI_OCF_READ_BUFFER_SIZE	0x0005
+#define BT_HCI_OCF_READ_EXTENDED	0x0004
+#define BT_HCI_OCF_READ_BUFFER		0x0005
 #define BT_HCI_OCF_READ_BDADDR		0x0009
 /* Bluetooth Status parameters */
 #define BT_HCI_OGF_STAT			0x05
@@ -118,13 +119,14 @@ struct bt_cmd {
 #define BT_EVT_BT_LOGO				0xfe
 #define BT_EVT_VENDOR				0xff
 /* bt hci event packet, header 2, data max 255, total 257 bytes */
+#define BT_EVT_MAX_PAYLOAD	255
 struct bt_evt_head {
 	uint8_t		op;
 	uint8_t		len;
 } __packed;
 struct bt_evt {
 	struct bt_evt_head	head;
-	uint8_t			data[255];
+	uint8_t			data[BT_EVT_MAX_PAYLOAD];
 } __packed;
 
 /* bt hci asynchronous packet, header 4, data max 27, total 31 bytes
