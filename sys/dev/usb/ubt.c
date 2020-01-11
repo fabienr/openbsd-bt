@@ -248,10 +248,12 @@ ubt_attach(struct device *parent, struct device *self, void *aux)
 	if (ubt_malloc_xfers(usc) != 0)
 		goto fail;
 
-	/*
+	/* XXX untested
 	if (ubt_rx_acl_start(usc) != 0)
 		goto fail;
+	 */
 
+	/* XXX failed withouth alt setting
 	if (ubt_rx_sco_start(usc) != 0)
 		goto fail;
 	*/
@@ -311,7 +313,7 @@ ubt_open_pipes(struct ubt_softc *usc)
 		    DEVNAME(usc), usbd_errstr(err));
 		goto fail;
 	}
-	/* XXX
+	/* XXX untested
 	err = usbd_open_pipe(usc->sc_iface0, UBT_ACL_OUT, USBD_EXCLUSIVE_USE,
 	    &usc->tx_acl_pipe);
 	if (err != USBD_NORMAL_COMPLETION) {
@@ -392,7 +394,7 @@ ubt_malloc_xfers(struct ubt_softc *usc)
 		err = USBD_NOMEM;
 		goto fail;
 	}
-	/* XXX
+	/* XXX untested
 	usc->tx_acl_xfer = usbd_alloc_xfer(usc->sc_udev);
 	if (usc->tx_acl_xfer == NULL) {
 		err = USBD_NOMEM;
@@ -491,12 +493,14 @@ ubt_cmd(struct device *sc, const struct bt_cmd *pkt)
 int
 ubt_acl(struct device *sc, const struct bt_acl *pkt)
 {
+	/* XXX not implemented yet */
 	return (0);
 }
 
 int
 ubt_sco(struct device *sc, const struct bt_sco *pkt)
 {
+	/* XXX not implemented yet */
 	return (0);
 }
 
