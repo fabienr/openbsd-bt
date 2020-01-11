@@ -27,14 +27,16 @@
 #include <sys/mutex.h>
 #include <sys/malloc.h>
 
+#include <bluetooth/bluetooth.h>
 #include <dev/bluetooth/bluetoothreg.h>
 #include <dev/bluetooth/bluetoothvar.h>
-#include <bluetooth/bluetooth.h>
 #include <bluetooth/bthci.h>
 
+/* XXX debug
 #ifdef BLUETOOTH_DEBUG
 #define BTHCI_DEBUG
 #endif
+*/
 
 #ifdef BTHCI_DEBUG
 #define DPRINTF(x)	do { printf x; } while (0)
@@ -118,6 +120,14 @@ bthci_init(struct bthci *hci, struct device *sc, struct btbus *bus, int ipl)
 }
 
 void
+bthci_register(struct bthci *hci, void *ident)
+{
+	mtx_enter(&hci->mtx);
+	hci->ident = ident;
+	mtx_leave(&hci->mtx);
+}
+
+void
 bthci_destroy(struct bthci *hci)
 {
 	DPRINTF(("%s: bthci_destroy\n", DEVNAME(hci)));
@@ -139,8 +149,12 @@ bthci_pool_put(struct bthci *hci, struct bt_evt *evt)
 void
 bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 {
+	/* from interrupt context */
 	struct bthci_evt_complete *cmd_complete;
 	struct bthci_evt_state *cmd_state;
+
+	/* XXX debug */
+	/* DUMP_BT_EVT(DEVNAME(hci), evt); */
 
 	/* check BT_EVT_CMD_COMPLETE|_STATE event consistency */
 	if (evt->head.op == BT_EVT_CMD_COMPLETE) {
@@ -207,21 +221,20 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 		return;
 	}
 	/* push event on the queue for later processing through bthci_read_evt */
-	/* XXX implement sleep handle */
 	SIMPLEQ_INSERT_TAIL(&hci->fifo, (struct bthci_evt *)evt, fifo);
+	/* wakeup blutooth_kthread */
+	if (hci->ident)
+		wakeup(hci->ident);
 }
 
 struct bt_evt *
 bthci_read_evt(struct bthci *hci)
 {
 	struct bthci_evt *evt;
-
 	mtx_enter(&hci->mtx);
 	evt = SIMPLEQ_FIRST(&hci->fifo);
 	if (evt) {
-		/* XXX debug */
 		DPRINTF(("%s: bthci_read_evt\n", DEVNAME(hci)));
-		/*DUMP_BT_EVT(DEVNAME(hci), (struct bt_evt*)evt);*/
 		SIMPLEQ_REMOVE_HEAD(&hci->fifo, fifo);
 	}
 	mtx_leave(&hci->mtx);
@@ -247,8 +260,8 @@ bthci_lc_inquiry(struct bthci *hci, uint64_t timeout, int limit)
 		uint8_t limit;
 	} * inquiry;
 	int err;
-	DPRINTF(("%s: bthci_lc_inquiry(%llu, %d)\n",
-	    DEVNAME(hci), timeout, limit));
+	DPRINTF(("%s: bthci_lc_inquiry(%llu second, %d limit)\n",
+	    DEVNAME(hci), timeout / 1000000000ULL, limit));
 	if ((err = bthci_enter(hci)) != 0)
 		return (err);
 	if ((timeout / 1000000000ULL) * 100 / 128 > 0x30 || timeout < 0) {
@@ -296,8 +309,8 @@ bthci_lc_remote_name(struct bthci *hci, struct bluetooth_bdaddr *bdaddr,
 	int i;
 	DPRINTF(("%s: bthci_lc_remote_name(", DEVNAME(hci)));
 	for (i = BT_ADDR_LEN; --i >= 0;)
-		DPRINTF(("%0X%c", bdaddr->bdaddr[i], (i)?':':' '));
-	DPRINTF((", %u, %u)\n", mode, clock));
+		DPRINTF(("%0X%c", bdaddr->b[i], (i)?':':' '));
+	DPRINTF((", %u, %x)\n", mode, clock));
 #endif /* BTHCI_DEBUG */
 	if ((err = bthci_enter(hci)) != 0)
 		return (err);
@@ -442,8 +455,6 @@ bthci_cmd(struct bthci *hci, uint8_t evt_filter)
 		goto fail;
 	}
 	DPRINTF(("%s: bthci_cmd event\n", DEVNAME(hci)));
-	/* XXX debug */
-	/* DUMP_BT_EVT(DEVNAME(hci), hci->evt);*/
  fail:
 	return (err);
 }
@@ -454,7 +465,6 @@ bthci_cmd_state(struct bthci *hci)
 	int err = 0;
 	struct bthci_evt_state *cmd_state;
 	if (hci->evt == NULL) {
-		/* XXX should not happen */
 		printf("%s: cmd_complete call with no event\n",
 		    DEVNAME(hci));
 		return (EPROTO);
@@ -472,7 +482,6 @@ bthci_cmd_complete(struct bthci *hci, void *dest, int len)
 	int err = 0;
 	struct bthci_evt_complete *cmd_complete;
 	if (hci->evt == NULL) {
-		/* XXX should not happen */
 		printf("%s: cmd_complete call with no event\n",
 		    DEVNAME(hci));
 		return (EPROTO);

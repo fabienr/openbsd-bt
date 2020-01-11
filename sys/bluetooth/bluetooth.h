@@ -22,6 +22,7 @@
 
 #ifndef _KERNEL
 #include <sys/types.h>
+#include <time.h>
 #endif /* _KERNEL */
 
 /* Bluetooth error codes */
@@ -100,11 +101,11 @@
 
 /* XXX implement kind of strbdaddr for printing */
 struct bluetooth_bdaddr {
-	uint8_t		bdaddr[BT_ADDR_LEN];
+	uint8_t		b[BT_ADDR_LEN];
 };
 
 struct bluetooth_class {
-	uint8_t		fields[3];
+	uint8_t		c[3];
 };
 
 struct bluetooth_info {
@@ -131,9 +132,13 @@ struct bluetooth_info_extended {
 /* parameter void */
 #define DIOCBTINQUIRY	_IO('B', 3)
 /* data to be read after */
-struct bluetooth_device { /* XXX to consolidate in a database with unit id */
+struct bluetooth_device {
+	uint8_t			unit;
+	struct timespec		nanotime;
 	struct bluetooth_bdaddr	bt_addr;
+	uint8_t			bt_scan_mode;
 	struct bluetooth_class	bt_class;
+	uint16_t		bt_clock;
 	char			name[248]; /* XXX see BT_EVT_MAX_PAYLOAD */
 };
 

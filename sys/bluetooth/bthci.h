@@ -28,6 +28,7 @@ struct bthci {
 	struct device		*sc;
 	struct btbus		*bus;
 	struct mutex		 mtx;
+	void			*ident;
 	struct bt_cmd		 cmd;
 	uint8_t			 evt_filter;
 	struct bt_evt		*evt;
@@ -36,6 +37,7 @@ struct bthci {
 };
 
 void bthci_init(struct bthci *, struct device *, struct btbus *, int);
+void bthci_register(struct bthci *, void *);
 void bthci_destroy(struct bthci *);
 struct bt_evt *bthci_pool_get(struct bthci *);
 void bthci_pool_put(struct bthci *, struct bt_evt *);

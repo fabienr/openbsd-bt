@@ -150,8 +150,8 @@ btconfig_open(int dev, int unit)
 		return;
 	}
 	printf("%0X#", unit);
-	for (i = 0; i < BT_ADDR_LEN; i++)
-		printf("%c%0X", ((i)?':':' '), info.bt_addr.bdaddr[i]);
+	for (i = BT_ADDR_LEN; --i >= 0;)
+		printf("%0X%c", info.bt_addr.b[i], (i)?':':' ');
 	printf(" %s\n"
 	    "HCI %s (rev %d)\n"
 	    "LMP %s (rev %d)\n"
@@ -212,12 +212,15 @@ btconfig_inquiry(int dev, int unit)
 	}
 	device = malloc(sizeof(*device));
 	while((k = read(dev, device, sizeof(*device))) == sizeof(*device)) {
-		printf("%0X#", unit);
-		for (i = 0; i < BT_ADDR_LEN; i++)
-			printf("%c%0X", ((i)?':':' '), device->bt_addr.bdaddr[i]);
-		printf(" %s\n", device->name);
+		printf("%0X#%0X ", unit, device->unit);
+		for (i = BT_ADDR_LEN; --i >= 0;)
+			printf("%0X%c", device->bt_addr.b[i], (i)?':':' ');
+		printf("%0X-%0X-%0X, %s\n", device->bt_class.c[0],
+		    device->bt_class.c[1], device->bt_class.c[2],
+		    device->name);
 		fflush(stdout);
 	}
+	free(device);
 	if (k != 0) {
 		btwarn("read device");
 		return;

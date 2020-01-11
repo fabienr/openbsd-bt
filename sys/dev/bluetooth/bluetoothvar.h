@@ -15,8 +15,10 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#define BTPRI			MAXPRI /* XXX to change for something else */
-#define BT_TIMEOUT		SEC_TO_NSEC(5)
+#define BTPRI			PRIBIO /* XXX to change for something else ? */
+#define BT_TIMEOUT		SEC_TO_NSEC(1)
+#define BT_INQUIRY_INTERVAL	SEC_TO_NSEC(5)
+#define BT_INQUIRY_TIMEOUT	30
 #define BT_STATE_INIT		0
 #define BT_STATE_DYING		1
 #define BT_STATE_WAITING	2
@@ -38,20 +40,47 @@ struct btbus {
 
 struct bluetooth_dev_io {
 	size_t				 size;
-	void				*buf;
 	SIMPLEQ_ENTRY(bluetooth_dev_io)	 fifo;
+	uint8_t				 buf; /* first bytes of buf */
 };
 SIMPLEQ_HEAD(bluetooth_dev_ios, bluetooth_dev_io);
+
+struct bluetooth_device_unit {
+	struct bluetooth_device			unit;
+	SLIST_ENTRY(bluetooth_device_unit)	sl;
+};
+SLIST_HEAD(bluetooth_device_units, bluetooth_device_unit);
 
 struct bluetooth_softc {
 	struct device			 sc_dev;
 	struct bthci			*hci;
 	struct rwlock			 lock; /* XXX actually, a mutex feet */
-	int				 state; /* manged by userland dev io */
-	int				 count; /* internal async command count */
-	struct bluetooth_dev_ios	 fifo_tx;
-	struct bluetooth_dev_ios	 fifo_rx; /* XXX not used */
+
+	/* Userland IO */
+	struct bluetooth_dev_ios	 fifo;
+
+	/* State are changed by userland dev api on open, ioctl, read and close.
+	 * When needed, the ioctl can start a new state with at least a count of
+	 * one command and shall configure timeout to enable state watchdog over
+	 * seconds based on the previously set timespec start.
+	 */
+	int				 state;
+	int				 count;
+	struct timespec			 start;
+	int				 timeout;
+
+	/* Devices unit database */
+	int				 ndevices;
+	struct bluetooth_device_units	 devices;
+
+
 };
 
-void bluetooth_attach(struct bluetooth_softc *,  struct bthci *);
+void bluetooth_attach(struct bluetooth_softc *, struct bthci *);
 void bluetooth_detach(struct bluetooth_softc *);
+
+int bluetoothopen(dev_t, int, int, struct proc *);
+int bluetoothclose(dev_t, int, int, struct proc *);
+int bluetoothread(dev_t, struct uio *, int);
+int bluetoothioctl(dev_t, u_long, caddr_t, int, struct proc *);
+

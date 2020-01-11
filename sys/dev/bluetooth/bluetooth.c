@@ -27,9 +27,9 @@
 #include <sys/malloc.h>
 #include <sys/vnode.h>
 
+#include <bluetooth/bluetooth.h>
 #include <dev/bluetooth/bluetoothreg.h>
 #include <dev/bluetooth/bluetoothvar.h>
-#include <bluetooth/bluetooth.h>
 #include <bluetooth/bthci.h>
 
 #ifdef BLUETOOTH_DEBUG
@@ -49,28 +49,26 @@ struct cfdriver bluetooth_cd = {
     NULL, "bluetooth", DV_DULL
 };
 
-void bluetooth_attach(struct bluetooth_softc *, struct bthci *);
-void bluetooth_detach(struct bluetooth_softc *);
-
-int bluetoothopen(dev_t, int, int, struct proc *);
-int bluetoothclose(dev_t, int, int, struct proc *);
-int bluetoothread(dev_t, struct uio *, int);
-int bluetoothioctl(dev_t, u_long, caddr_t, int, struct proc *);
-int bluetooth_dev_write(struct bluetooth_softc *, size_t, void*);
+int bluetooth_dev_write(struct bluetooth_softc *, void *, size_t);
 
 void bluetooth_kthread_deferred(void *);
 void bluetooth_kthread(void *);
 int bluetooth_init(struct bluetooth_softc *);
 int bluetooth_inquiry(struct bluetooth_softc *, struct bt_evt *);
 
+struct bluetooth_device *bluetooth_device_loockup(struct bluetooth_softc *,
+    struct bluetooth_bdaddr *);
+struct bluetooth_device *bluetooth_device_new(struct bluetooth_softc *,
+    struct bluetooth_bdaddr *, uint8_t, struct bluetooth_class *, uint16_t);
+
 void
 bluetooth_attach(struct bluetooth_softc *sc, struct bthci *hci)
 {
 	DPRINTF(("%s: bluetooth_attach\n", DEVNAME(sc)));
 	sc->hci = hci;
+	bthci_register(sc->hci, sc);
 	rw_init(&sc->lock, DEVNAME(sc));
-	SIMPLEQ_INIT(&sc->fifo_tx);
-	SIMPLEQ_INIT(&sc->fifo_rx);
+	SIMPLEQ_INIT(&sc->fifo);
 	kthread_create_deferred(bluetooth_kthread_deferred, (void*)sc);
 }
 
@@ -78,11 +76,11 @@ void
 bluetooth_detach(struct bluetooth_softc *sc)
 {
 	DPRINTF(("%s: bluetooth_detach\n", DEVNAME(sc)));
+	wakeup(sc);
 	rw_enter_write(&sc->lock);
 	sc->state = BT_STATE_DYING;
-	/* XXX debug */
-	DPRINTF(("%s: state=%d, count=%d\n",
-	    DEVNAME(sc), sc->state, sc->count));
+	wakeup(sc);
+	/* XXX assert fifo is empty, ensure memory is clean */
 	rw_exit_write(&sc->lock);
 }
 
@@ -105,9 +103,6 @@ bluetoothopen(dev_t dev, int flags, int fmt, struct proc *p)
 		goto fail;
 	}
 	sc->state = BT_STATE_DEVOPEN;
-	/* XXX debug */
-	DPRINTF(("%s: state=%d, count=%d\n",
-	    DEVNAME(sc), sc->state, sc->count));
  fail:
 	rw_exit_write(&sc->lock);
 	return (err);
@@ -125,20 +120,9 @@ bluetoothclose(dev_t dev, int flags, int fmt, struct proc *p)
 	rw_enter_write(&sc->lock);
 	sc->state = BT_STATE_WAITING;
 	sc->count = 0;
-	/* XXX debug */
-	DPRINTF(("%s: state=%d, count=%d\n",
-	    DEVNAME(sc), sc->state, sc->count));
-	while ((io = SIMPLEQ_FIRST(&sc->fifo_tx)) != NULL) {
-		if (io->buf)
-			free(io->buf, M_BLUETOOTH, io->size);
-		free(io, M_BLUETOOTH, sizeof(*io));
-		SIMPLEQ_REMOVE_HEAD(&sc->fifo_tx, fifo);
-	}
-	while ((io = SIMPLEQ_FIRST(&sc->fifo_rx)) != NULL) {
-		if (io->buf)
-			free(io->buf, M_BLUETOOTH, io->size);
-		free(io, M_BLUETOOTH, sizeof(*io));
-		SIMPLEQ_REMOVE_HEAD(&sc->fifo_rx, fifo);
+	while ((io = SIMPLEQ_FIRST(&sc->fifo)) != NULL) {
+		free(io, M_BLUETOOTH, sizeof(*io)+io->size);
+		SIMPLEQ_REMOVE_HEAD(&sc->fifo, fifo);
 	}
 	rw_exit_write(&sc->lock);
 	return (0);
@@ -153,20 +137,20 @@ bluetoothread(dev_t dev, struct uio *uio, int flag)
 
 	sc = bluetooth_cd.cd_devs[BLUETOOTHUNIT(dev)];
 	rw_enter_write(&sc->lock);
-	io = SIMPLEQ_FIRST(&sc->fifo_tx);
+	io = SIMPLEQ_FIRST(&sc->fifo);
 	if (flag & IO_NDELAY && io == NULL) {
 		err = EWOULDBLOCK;
 		goto fail;
 	}
 	if (io == NULL) {
-		err = rwsleep_nsec(&sc->fifo_tx, &sc->lock, BTPRI|PCATCH,
-		    DEVNAME(sc), BT_TIMEOUT*5); /* XXX synchro with kthread ? */
+		err = rwsleep_nsec(&sc->fifo, &sc->lock, BTPRI|PCATCH,
+		    DEVNAME(sc), INFSLP);
 		if (err)
 			goto fail;
-		io = SIMPLEQ_FIRST(&sc->fifo_tx);
+		io = SIMPLEQ_FIRST(&sc->fifo);
 	}
 	if (io)
-		SIMPLEQ_REMOVE_HEAD(&sc->fifo_tx, fifo);
+		SIMPLEQ_REMOVE_HEAD(&sc->fifo, fifo);
 	else {
 		printf("%s: bluetoothread wakeup but there is no io pending\n",
 		    DEVNAME(sc));
@@ -183,13 +167,11 @@ bluetoothread(dev_t dev, struct uio *uio, int flag)
 		err = EPROTO;
 		goto fail;
 	}
-	err = uiomove(io->buf, io->size, uio);
+	err = uiomove(&io->buf, io->size, uio);
  fail:
 	rw_exit_write(&sc->lock);
-	if (io && io->buf)
-		free(io->buf, M_BLUETOOTH, io->size);
 	if (io)
-		free(io, M_BLUETOOTH, sizeof(*io));
+		free(io, M_BLUETOOTH, sizeof(*io)+io->size);
 	return (err);
 }
 
@@ -210,6 +192,9 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 	int err = 0, i;
 
 	sc = bluetooth_cd.cd_devs[BLUETOOTHUNIT(dev)];
+	/* XXX bthci_* can sleep, avoid locking ? */
+	rw_enter_write(&sc->lock);
+
 	switch (cmd) {
 	case DIOCBTINFO:
 		info = (struct bluetooth_info *)addr;
@@ -284,12 +269,16 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 	case DIOCBTINQUIRY:
 		sc->state = BT_STATE_INQUIRY;
 		sc->count++;
-		/* XXX debug */
-		DPRINTF(("%s: state=%d, count=%d\n",
-		    DEVNAME(sc), sc->state, sc->count));
-		err = bthci_lc_inquiry(sc->hci, BT_TIMEOUT*3, 0);/* XXX timeout */
+		err = bthci_lc_inquiry(sc->hci, BT_INQUIRY_INTERVAL, 0);
 		if (err)
 			goto fail;
+		if (sc->count) {
+			getnanotime(&sc->start);
+			sc->timeout = BT_INQUIRY_TIMEOUT;
+		} else
+			printf("%s: inquiry count reset\n", DEVNAME(sc));
+		/* wakeup blutooth_kthread */
+		wakeup(sc);
 		break;
 
 	default:
@@ -300,24 +289,27 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 	if (err) {
 		sc->state = BT_STATE_DEVOPEN;
 		sc->count = 0;
-		/* XXX debug */
-		DPRINTF(("%s: state=%d, count=%d\n",
-		    DEVNAME(sc), sc->state, sc->count));
 	}
+	rw_exit_write(&sc->lock);
 	return (err);
 }
 
 int
-bluetooth_dev_write(struct bluetooth_softc *sc, size_t size, void *buf)
+bluetooth_dev_write(struct bluetooth_softc *sc, void *buf, size_t size)
 {
 	struct bluetooth_dev_io *io;
-	io = malloc(sizeof(*io), M_BLUETOOTH, M_WAITOK|M_CANFAIL);
+	DPRINTF(("%s: dev_write %zu bytes\n",
+	    DEVNAME(sc), size));
+	if (sc->state < BT_STATE_DEVOPEN)
+		return (EINTR);
+	io = malloc(sizeof(*io)+size, M_BLUETOOTH, M_WAITOK|M_CANFAIL);
 	if (io == NULL)
 		return (ENOMEM);
 	io->size = size;
-	io->buf = buf;
-	SIMPLEQ_INSERT_TAIL(&sc->fifo_tx, io, fifo);
-	wakeup(&sc->fifo_tx);
+	if (size)
+		memcpy(&io->buf, buf, size);
+	SIMPLEQ_INSERT_TAIL(&sc->fifo, io, fifo);
+	wakeup(&sc->fifo);
 	return (0);
 }
 
@@ -331,9 +323,6 @@ bluetooth_kthread_deferred(void *priv)
 		printf("%s: kthread_create, err=%d",
 		    DEVNAME(sc), err);
 		sc->state = BT_STATE_DYING;
-		/* XXX debug */
-		DPRINTF(("%s: state=%d, count=%d\n",
-		    DEVNAME(sc), sc->state, sc->count));
 	}
 }
 
@@ -341,30 +330,29 @@ void
 bluetooth_kthread(void *priv)
 {
 	struct bluetooth_softc *sc;
-	int err;
 	struct bt_evt *evt;
+	struct timespec now;
+	int err = 0;
 
 	sc = (struct bluetooth_softc *)priv;
 	DPRINTF(("%s: bluetooth_kthread\n", DEVNAME(sc)));
 
+	/* XXX bthci_* can sleep, avoid locking ? */
 	rw_enter_write(&sc->lock);
-	if ((err = bluetooth_init(sc)))
+	do {
+		err = bluetooth_init(sc);
+		if (err)
+			printf("%s: bluetooth_init, err %d\n", DEVNAME(sc), err);
+	} while(err == EAGAIN);
+	if (err)
 		sc->state = BT_STATE_DYING;
 	else
 		sc->state = BT_STATE_WAITING;
-	/* XXX debug */
-	DPRINTF(("%s: state=%d, count=%d\n",
-	    DEVNAME(sc), sc->state, sc->count));
-	/* XXX keep exclusive access, actually, a mutex feet
-	 * if ((err = rw_enter(&sc->lock, RW_DOWNGRADE))) {
-	 * 	printf("%s: rw_enter, err=%d\n",
-	 * 	    DEVNAME(sc), err);
-	 * 	sc->state = BT_STATE_DYING;
-	 * }
-	 */
 	while(sc->state != BT_STATE_DYING) {
 		err = 0;
 		while((evt = bthci_read_evt(sc->hci)) != NULL) {
+			DPRINTF(("%s: kthread state=%d, count=%d\n",
+			    DEVNAME(sc), sc->state, sc->count));
 			switch (sc->state) {
 			case BT_STATE_INQUIRY:
 				err = bluetooth_inquiry(sc, evt);
@@ -378,15 +366,31 @@ bluetooth_kthread(void *priv)
 			}
 			bthci_pool_put(sc->hci, evt);
 		}
-		/* XXX implement bthci_handle() and change for infinite sleep */
-		rwsleep_nsec(sc, &sc->lock, BTPRI, DEVNAME(sc), 100);
+		rwsleep_nsec(sc, &sc->lock, BTPRI, DEVNAME(sc), (sc->timeout)?
+		    BT_TIMEOUT:INFSLP);
+		if (sc->timeout) {
+			getnanotime(&now);
+			timespecsub(&now, &sc->start, &now);
+			if (now.tv_sec >= sc->timeout) {
+				DPRINTF(("%s: watchdog state %d, count %d\n",
+				    DEVNAME(sc), sc->state, sc->count));
+				sc->count = 0;
+			}
+		}
+		if (sc->count == 0)
+			goto state_done;
+		continue;
+  state_done:
+		/* reset watchdog, notify even if already closed */
+		sc->timeout = 0;
+		if (bluetooth_dev_write(sc, NULL, 0) == ENOMEM)
+			printf("%s: bluetooth_dev_write ENOMEM\n",
+			    DEVNAME(sc));
 	}
 	err = (sc->state != BT_STATE_DYING);
-	/* XXX debug */
-	DPRINTF(("%s: state=%d, count=%d\n",
-	    DEVNAME(sc), sc->state, sc->count));
-	rw_exit_read(&sc->lock);
-	DPRINTF(("%s: bluetooth_kthread exit\n", DEVNAME(sc)));
+	DPRINTF(("%s: kthread exit state=%d, count=%d, err=%d\n",
+	    DEVNAME(sc), sc->state, sc->count, err));
+	rw_exit_write(&sc->lock);
 	kthread_exit(err);
 }
 
@@ -394,12 +398,9 @@ int
 bluetooth_init(struct bluetooth_softc *sc)
 {
 	int err;
-	if ((err = bthci_cb_reset(sc->hci))) {
+	if ((err = bthci_cb_reset(sc->hci)))
 		printf("%s: bthci_attach reset fail, err=%d\n",
 		    DEVNAME(sc), err);
-		goto fail;
-	}
- fail:
 	return (err);
 }
 
@@ -423,9 +424,12 @@ bluetooth_inquiry(struct bluetooth_softc *sc, struct bt_evt *evt)
 	switch(evt->head.op) {
 	case BT_EVT_INQUIRY_COMPL:
 		sc->count--;
-		/* XXX debug */
-		DPRINTF(("%s: state=%d, count=%d\n",
-		    DEVNAME(sc), sc->state, sc->count));
+		if (sc->count) {
+			err = bthci_lc_inquiry(sc->hci, BT_INQUIRY_INTERVAL, 0);
+			if (err)
+				goto fail;
+			sc->count++;
+		}
 		break;
 	case BT_EVT_INQUIRY_RESULT:
 		if (evt->head.len < 1) {
@@ -457,23 +461,41 @@ bluetooth_inquiry(struct bluetooth_softc *sc, struct bt_evt *evt)
 		i += inquiry.ndevices * sizeof(*inquiry.classes);
 		inquiry.clocks = (uint16_t *)&evt->data[i];
 		for (i = 0; i < inquiry.ndevices; i++) {
-			if (bthci_lc_remote_name(sc->hci, &inquiry.bdaddrs[i],
-			    inquiry.scan_mode[i], inquiry.clocks[i])) {
-				printf("%s: inquiry bthci_lc_remote_name fail\n",
+			dev = bluetooth_device_loockup(sc, &inquiry.bdaddrs[i]);
+			if (dev == NULL)
+				dev = bluetooth_device_new(sc,
+				    &inquiry.bdaddrs[i],
+				    inquiry.scan_mode[i],
+				    &inquiry.classes[i],
+				    inquiry.clocks[i]);
+			if (dev == NULL) {
+				printf("%s: inquiry result device_new err\n",
 				    DEVNAME(sc));
-			} else {
-				sc->count++;
-				/* XXX debug */
-				DPRINTF(("%s: state=%d, count=%d\n",
-				    DEVNAME(sc), sc->state, sc->count));
+				goto fail;
 			}
+			if (timespeccmp(&dev->nanotime, &sc->start, >))
+				continue;
+			getnanotime(&dev->nanotime);
+			if (dev->name[0] != '\0') {
+				err = bluetooth_dev_write(sc, dev, sizeof(*dev));
+				if (err) {
+					printf("%s: inquiry result, write %d\n",
+					    DEVNAME(sc), err);
+					goto fail;
+				}
+				continue;
+			}
+			err = bthci_lc_remote_name(sc->hci, &dev->bt_addr,
+			    dev->bt_scan_mode, dev->bt_clock);
+			if (err) {
+				printf("%s: inquiry result lc_remote_name %d\n",
+				    DEVNAME(sc), err);
+			} else
+				sc->count++;
 		}
 		break;
 	case BT_EVT_REMOTE_NAME_REQ_COMPL:
 		sc->count--;
-		/* XXX debug */
-		DPRINTF(("%s: state=%d, count=%d\n",
-		    DEVNAME(sc), sc->state, sc->count));
 		if (evt->head.len <= sizeof(*name)) {
 			printf("%s: inquiry name min len %d <= %zu\n",
 			    DEVNAME(sc), evt->head.len, sizeof(*name));
@@ -497,17 +519,17 @@ bluetooth_inquiry(struct bluetooth_softc *sc, struct bt_evt *evt)
 			    DEVNAME(sc));
 			evt->data[sizeof(*name) + i - 1] = '\0';
 		}
-		dev = malloc(sizeof(*dev), M_BLUETOOTH, M_WAITOK|M_CANFAIL);
+		dev = bluetooth_device_loockup(sc, &name->bdaddr);
 		if (dev == NULL) {
-			printf("%s: inquiry name malloc ENOMEM\n",
+			printf("%s: inquiry name device_loockup err\n",
 			    DEVNAME(sc));
 			goto fail;
 		}
-		memcpy(&dev->bt_addr, &name->bdaddr, sizeof(dev->bt_addr));
 		memcpy(&dev->name, &evt->data[sizeof(*name)], len);
-		if (bluetooth_dev_write(sc, sizeof(*dev), dev)) {
-			printf("%s: inquiry name, bluetooth_dev_write ENOMEM\n",
-			    DEVNAME(sc));
+		err = bluetooth_dev_write(sc, dev, sizeof(*dev));
+		if (err) {
+			printf("%s: inquiry name, write %d\n",
+			    DEVNAME(sc), err);
 			goto fail;
 		}
 		break;
@@ -515,9 +537,52 @@ bluetooth_inquiry(struct bluetooth_softc *sc, struct bt_evt *evt)
  fail:
 		err = -1;
 	}
-	if (sc->count == 0)
-		if (bluetooth_dev_write(sc, 0, NULL))
-			printf("%s: inquiry, bluetooth_dev_write(NULL) ENOMEM\n",
-			    DEVNAME(sc));
+	if (sc->count == 0) {
+		sc->timeout = 0;
+		err = bluetooth_dev_write(sc, NULL, 0);
+		if (err)
+			printf("%s: inquiry name, bluetooth_dev_write(NULL) %d\n",
+			    DEVNAME(sc), err);
+	}
 	return (err);
 }
+
+struct bluetooth_device *
+bluetooth_device_loockup(struct bluetooth_softc *sc,
+    struct bluetooth_bdaddr *bdaddr)
+{
+	struct bluetooth_device_unit *dev = NULL;
+	int i;
+#ifdef BT_DEBUG
+	printf("%s: loockup ", DEVNAME(sc));
+	for (i = BT_ADDR_LEN; --i >= 0;)
+		printf("%0X%c", bdaddr->b[i], (i)?':':' ');
+	printf("\n");
+#endif
+	SLIST_FOREACH(dev, &sc->devices, sl) {
+		for (i = BT_ADDR_LEN; --i >= 0;)
+			if (dev->unit.bt_addr.b[i] != bdaddr->b[i])
+				break;
+		if (i < 0)
+			break;
+	}
+	return ((struct bluetooth_device *)dev);
+}
+
+struct bluetooth_device *
+bluetooth_device_new(struct bluetooth_softc *sc, struct bluetooth_bdaddr *bdaddr,
+    uint8_t scan_mode, struct bluetooth_class *class, uint16_t clock)
+{
+	struct bluetooth_device_unit *dev = NULL;
+	dev = malloc(sizeof(*dev), M_BLUETOOTH, M_WAITOK|M_CANFAIL|M_ZERO);
+	if (dev == NULL)
+		return (NULL);
+	dev->unit.unit = ++sc->ndevices;
+	memcpy(&dev->unit.bt_addr, bdaddr, sizeof(dev->unit.bt_addr));
+	dev->unit.bt_scan_mode = scan_mode;
+	memcpy(&dev->unit.bt_class, class, sizeof(dev->unit.bt_class));
+	dev->unit.bt_clock = clock;
+	SLIST_INSERT_HEAD(&sc->devices, dev, sl);
+	return ((struct bluetooth_device *)dev);
+}
+
