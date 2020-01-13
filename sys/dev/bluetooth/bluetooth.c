@@ -404,9 +404,18 @@ int
 bluetooth_init(struct bluetooth_softc *sc)
 {
 	int err;
-	if ((err = bthci_cb_reset(sc->hci)))
+	if ((err = bthci_cb_reset(sc->hci))) {
 		printf("%s: bthci_attach reset fail, err=%d\n",
 		    DEVNAME(sc), err);
+		goto fail;
+	}
+	if ((err = bthci_cb_name(sc->hci, DEVNAME(sc)))) {
+		printf("%s: bthci_cb_name fail, err=%d\n",
+		    DEVNAME(sc), err);
+		goto fail;
+	}
+	
+ fail:
 	return (err);
 }
 

@@ -72,8 +72,6 @@ struct bluetooth_softc {
 	/* Devices unit database */
 	int				 ndevices;
 	struct bluetooth_device_units	 devices;
-
-
 };
 
 void bluetooth_attach(struct bluetooth_softc *, struct bthci *);

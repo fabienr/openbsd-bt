@@ -32,11 +32,10 @@
 #include <dev/bluetooth/bluetoothvar.h>
 #include <bluetooth/bthci.h>
 
-/* XXX debug
+/* XXX debug */
 #ifdef BLUETOOTH_DEBUG
 #define BTHCI_DEBUG
 #endif
-*/
 
 #ifdef BTHCI_DEBUG
 #define DPRINTF(x)	do { printf x; } while (0)
@@ -53,19 +52,20 @@
 struct bthci_cmd_complete {
 	uint8_t			buff_sz;
 	uint16_t		op;
+	uint8_t			state;
 } __packed;
 struct bthci_evt_complete {
 	struct bt_evt_head		head;
 	struct bthci_cmd_complete	event;
-	/* evt_head + cmd_complete = 5 */
-	uint8_t				data[sizeof(struct bt_evt) - 5];
+	/* evt_head + cmd_complete = 6 */
+	uint8_t				data[sizeof(struct bt_evt) - 6];
 } __packed;
 #ifdef BTHCI_DEBUG
 #define DUMP_BT_EVT_COMPLETE(hci, evt) do {					\
 	DPRINTF(("%s: command complete head(op=%02X, len=%d), "			\
-	    "event(buff_sz=%d, op=%04x), data",					\
+	    "event(buff_sz=%d, op=%04x, state=%0x), data",			\
 	    DEVNAME(hci), (evt)->head.op, (evt)->head.len,			\
-	    (evt)->event.buff_sz, (evt)->event.op));				\
+	    (evt)->event.buff_sz, (evt)->event.op, (evt)->event.state));	\
 	for (int i = 0;								\
 	    i < (evt)->head.len - sizeof(struct bthci_cmd_complete); i++)	\
 		DPRINTF((" %02x", (evt)->data[i]));				\
@@ -254,7 +254,7 @@ bthci_read_evt(struct bthci *hci)
 int
 bthci_lc_inquiry(struct bthci *hci, uint64_t timeout, int limit)
 {
-	struct {
+	struct lc_inquiry {
 		uint8_t lap[3];
 		uint8_t timeout;
 		uint8_t limit;
@@ -278,7 +278,7 @@ bthci_lc_inquiry(struct bthci *hci, uint64_t timeout, int limit)
 	}
 	hci->cmd.head.op = htole16(BT_HCI_LC_INQUIRY);
 	hci->cmd.head.len = sizeof(*inquiry);
-	inquiry = (void *)&hci->cmd.data;
+	inquiry = (struct lc_inquiry *)&hci->cmd.data;
 	inquiry->lap[0] = BT_HCI_INQUIRY_LAP_GIAC_0;
 	inquiry->lap[1] = BT_HCI_INQUIRY_LAP_1;
 	inquiry->lap[2] = BT_HCI_INQUIRY_LAP_2;
@@ -298,12 +298,12 @@ int
 bthci_lc_remote_name(struct bthci *hci, struct bluetooth_bdaddr *bdaddr,
     uint8_t mode, uint16_t clock)
 {
-	struct {
+	struct lc_remote_name {
 		struct bluetooth_bdaddr	addr;
 		uint8_t			mode;
 		uint8_t			reserved;
 		uint16_t		clock;
-	} resolve;
+	} *remote_name;
 	int err;
 #ifdef BTHCI_DEBUG
 	int i;
@@ -315,11 +315,11 @@ bthci_lc_remote_name(struct bthci *hci, struct bluetooth_bdaddr *bdaddr,
 	if ((err = bthci_enter(hci)) != 0)
 		return (err);
 	hci->cmd.head.op = htole16(BT_HCI_LC_REMOTE_NAME);
-	memcpy(&resolve.addr, bdaddr, sizeof(*bdaddr));
-	resolve.mode = mode;
-	resolve.clock = clock;
-	hci->cmd.head.len = sizeof(resolve);
-	memcpy(hci->cmd.data, &resolve, sizeof(resolve));
+	hci->cmd.head.len = sizeof(*remote_name);
+	remote_name = (struct lc_remote_name *)&hci->cmd.data;
+	memcpy(&remote_name->addr, bdaddr, sizeof(*bdaddr));
+	remote_name->mode = mode;
+	remote_name->clock = clock;
 	if ((err = bthci_cmd(hci, BT_EVT_CMD_STATE)))
 		goto fail;
 	if ((err = bthci_cmd_state(hci)))
@@ -336,6 +336,37 @@ bthci_cb_reset(struct bthci *hci)
 	DPRINTF(("%s: bthci_cb_reset\n", DEVNAME(hci)));
 	return (bthci_void(hci, NULL, 0, BT_HCI_CB_RESET));
 }
+
+#define BT_HCI_CB_NAME		(BT_HCI_OCF_WRITE_NAME|(BT_HCI_OGF_CB<<10))
+int
+bthci_cb_name(struct bthci *hci, char *local_name)
+{
+	struct cb_name {
+		char	local[248];
+	} * name;
+	int err;
+	DPRINTF(("%s: bthci_cb_name(%s)\n", DEVNAME(hci), local_name));
+	if ((err = bthci_enter(hci)) != 0)
+		return (err);
+	if (strlen(local_name) >= sizeof(*name)) {
+		printf("%s: bthci_cb_name invalid local name lenght %zu > %zu\n",
+		    DEVNAME(hci), strlen(local_name), sizeof(*name));
+		err = EINVAL;
+		goto fail;
+	}
+	hci->cmd.head.op = htole16(BT_HCI_CB_NAME);
+	hci->cmd.head.len = sizeof(*name);
+	name = (struct cb_name *)&hci->cmd.data;
+	strlcpy((char *)&name->local, local_name, sizeof(name->local));
+	if ((err = bthci_cmd(hci, BT_EVT_CMD_COMPLETE)))
+		goto fail;
+	if ((err = bthci_cmd_complete(hci, NULL, 0)))
+		goto fail;
+ fail:
+	bthci_leave(hci);
+	return (err);
+}
+
 
 #define BT_HCI_INFO_VERSION	(BT_HCI_OCF_READ_VERSION|(BT_HCI_OGF_INFO<<10))
 int
@@ -386,7 +417,6 @@ bthci_info_extended(struct bthci *hci, int p, struct bt_hci_info_extended *info)
 		goto fail;
 	if ((err = bthci_cmd_complete(hci, info, sizeof(*info))))
 		goto fail;
-	err = BT_ERR_TOH(*(uint8_t *)info);
 	if (info->page != command->page) {
 		printf("%s : bthci_info_extended invalid answer page %d != %d\n",
 		    DEVNAME(hci), info->page, command->page);
@@ -487,20 +517,12 @@ bthci_cmd_complete(struct bthci *hci, void *dest, int len)
 		return (EPROTO);
 	}
 	cmd_complete = (struct bthci_evt_complete *)hci->evt;
-	if (cmd_complete->head.len - sizeof(struct bthci_cmd_complete) != len) {
-		if ((cmd_complete->head.len
-		    - sizeof(struct bthci_cmd_complete)) != 1) {
-			printf("%s: invalid event parameter len %d != %d\n",
-			    DEVNAME(hci), (int)(cmd_complete->head.len -
-			    sizeof(struct bthci_cmd_complete)), len);
-			err = EPROTO;
-			goto fail;
-		}
-		len = 1;
-	}
-	if (dest && len)
+	if (dest && (cmd_complete->head.len - sizeof(struct bthci_cmd_complete)
+	    == len))
 		memcpy(dest, cmd_complete->data, len);
- fail:
+	else if (dest && len)
+		memset(dest, 0, len);
+	err = BT_ERR_TOH(cmd_complete->event.state);
 	pool_put(&hci->evts, hci->evt);
 	hci->evt = NULL;
 	return (err);
@@ -522,7 +544,6 @@ bthci_void(struct bthci *hci, void *info, int len, int op)
 	}
 	if ((err = bthci_cmd_complete(hci, info, len)))
 		goto fail;
-	err = BT_ERR_TOH(*(uint8_t *)info);
  fail:
 	bthci_leave(hci);
 	return (err);

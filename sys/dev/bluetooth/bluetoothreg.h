@@ -44,6 +44,7 @@
 /* Bluetooth Controller & Baseband commands */
 #define BT_HCI_OGF_CB			0x03
 #define BT_HCI_OCF_RESET		0x0003
+#define BT_HCI_OCF_WRITE_NAME		0x0013
 /* Bluetooth Informational parameters */
 #define BT_HCI_OGF_INFO			0x04
 #define BT_HCI_OCF_READ_VERSION		0x0001

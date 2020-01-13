@@ -50,9 +50,9 @@ int bthci_lc_remote_name(struct bthci *, struct bluetooth_bdaddr *,
     uint8_t, uint16_t);
 
 int bthci_cb_reset(struct bthci *);
+int bthci_cb_name(struct bthci *, char *);
 
 struct bt_hci_info_version {
-	uint8_t		state;
 	uint8_t		hci_version;
 	uint16_t	hci_revision;
 	uint8_t		lmp_version;
@@ -62,19 +62,16 @@ struct bt_hci_info_version {
 int bthci_info_version(struct bthci *, struct bt_hci_info_version *);
 
 struct bt_hci_info_commands {
-	uint8_t		state;
 	uint8_t		bitmask[BT_COMMANDS_BITMASK_LEN];
 } __packed;
 int bthci_info_commands(struct bthci *, struct bt_hci_info_commands *);
 
 struct bt_hci_info_features {
-	uint8_t		state;
 	uint8_t		bitmask[BT_FEATURES_BITMASK_LEN];
 } __packed;
 int bthci_info_features(struct bthci *, struct bt_hci_info_features *);
 
 struct bt_hci_info_extended {
-	uint8_t		state;
 	uint8_t		page;
 	uint8_t		max_page;
 	uint8_t		bitmask[BT_FEATURES_BITMASK_LEN];
@@ -82,7 +79,6 @@ struct bt_hci_info_extended {
 int bthci_info_extended(struct bthci *, int, struct bt_hci_info_extended *);
 
 struct bt_hci_info_buffer {
-	uint8_t		state;
 	uint16_t	acl_size;
 	uint8_t		sco_size;
 	uint16_t	acl_bufferlen;
@@ -91,7 +87,6 @@ struct bt_hci_info_buffer {
 int bthci_info_buffer(struct bthci *, struct bt_hci_info_buffer *);
 
 struct bt_hci_info_bdaddr {
-	uint8_t			state;
 	struct bluetooth_bdaddr	bdaddr;
 } __packed;
 int bthci_info_bdaddr(struct bthci *, struct bt_hci_info_bdaddr *);
