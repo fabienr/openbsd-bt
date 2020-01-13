@@ -35,6 +35,7 @@
 #include <dev/bluetooth/bluetoothvar.h>
 #include <bluetooth/bthci.h>
 
+/* XXX debug */
 #ifdef BLUETOOTH_DEBUG
 #define UBT_DEBUG
 #endif
@@ -474,6 +475,11 @@ ubt_cmd(struct device *sc, const struct bt_cmd *pkt)
 	usb_device_request_t	 req;
 	usbd_status		 err;
 
+#ifdef UBT_DEBUG
+	DPRINTF(("ubt_cmd\n"));
+	DUMP_BT_CMD(DEVNAME(usc), pkt);
+#endif
+
 	usc = (struct ubt_softc *)sc;
 	memset(&req, 0, sizeof(req));
 	req.bmRequestType = UT_WRITE_CLASS_DEVICE;
@@ -510,7 +516,7 @@ static void
 ubt_evt(struct usbd_xfer *xfer, void *priv, usbd_status status)
 {
 	struct ubt_softc	*usc = priv;
-	struct bt_evt		*evt, *pkt = &usc->rx_evt_buf;
+	struct bt_evt		*evt = &usc->rx_evt_buf;
 	uint32_t		 len;
 
 	if (status != USBD_NORMAL_COMPLETION)
@@ -524,11 +530,17 @@ ubt_evt(struct usbd_xfer *xfer, void *priv, usbd_status status)
 		    DEVNAME(usc), len, sizeof(struct bt_evt_head));
 		return;
 	}
-	if (len - sizeof(struct bt_evt_head) != pkt->head.len) {
+	if (len - sizeof(struct bt_evt_head) != evt->head.len) {
 		printf("%s: invalid interrupt, len mismatch %d != %d\n",
-		    DEVNAME(usc), len, pkt->head.len);
+		    DEVNAME(usc), len, evt->head.len);
 		return;
 	}
+
+#ifdef UBT_DEBUG
+	DPRINTF(("%s: ubt_evt\n", DEVNAME(usc)));
+	DUMP_BT_EVT(DEVNAME(usc), evt);
+#endif
+
 	if ((evt = bthci_pool_get(&usc->hci)) == NULL) {
 		printf("%s: bthci pool empty\n",
 		    DEVNAME(usc));
