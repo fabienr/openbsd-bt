@@ -55,6 +55,24 @@
 #define BT_HCI_OCF_READ_BDADDR		0x0009
 /* Bluetooth Status parameters */
 #define BT_HCI_OGF_STAT			0x05
+
+/* Bluetooth feature bitmask byte description */
+#define BT_HCI_FEATURE_0_3SLOT		(1<<0)
+#define BT_HCI_FEATURE_0_5SLOT		(1<<1)
+#define BT_HCI_FEATURE_1_SC0		(1<<3)
+#define BT_HCI_FEATURE_1_HV2		(1<<4)
+#define BT_HCI_FEATURE_1_HV3		(1<<5)
+#define BT_HCI_FEATURE_3_EDRACL2MBPS	(1<<1)
+#define BT_HCI_FEATURE_3_EDRACL3MBPS	(1<<2)
+#define BT_HCI_FEATURE_3_EV3		(1<<7)
+#define BT_HCI_FEATURE_4_EV4		(1<<0)
+#define BT_HCI_FEATURE_4_EV5		(1<<1)
+#define BT_HCI_FEATURE_4_3SLOTSEDRACL	(1<<7)
+#define BT_HCI_FEATURE_5_5SLOTSEDRACL	(1<<0)
+#define BT_HCI_FEATURE_5_EDRSCO2MBPS	(1<<5)
+#define BT_HCI_FEATURE_5_EDRSCO3MBPS	(1<<6)
+#define BT_HCI_FEATURE_5_3SLOTSEDRSCO	(1<<7)
+
 /* bt hci cmd packet, header 3, data max 255, total 258 bytes */
 struct bt_cmd_head {
 	uint16_t	op;
@@ -130,6 +148,19 @@ struct bt_evt {
 	uint8_t			data[BT_EVT_MAX_PAYLOAD];
 } __packed;
 
+/* ACL Packet types which may be used for "Create Connection" */
+#define BT_ACL_NO_2MBPS_DH1	(1<<1) /* shall not be used */
+#define BT_ACL_NO_3MBPS_DH1	(1<<2) /* shall not be used */
+#define BT_ACL_DM1		(1<<3)
+#define BT_ACL_DH1		(1<<4)
+#define BT_ACL_NO_2MBPS_DH3	(1<<8) /* shall not be used */
+#define BT_ACL_NO_3MBPS_DH3	(1<<9) /* shall not be used */
+#define BT_ACL_DM3		(1<<10)
+#define BT_ACL_DH3		(1<<11)
+#define BT_ACL_NO_2MBPS_DH5	(1<<12) /* shall not be used */
+#define BT_ACL_NO_3MBPS_DH5	(1<<13) /* shall not be used */
+#define BT_ACL_DM5		(1<<14)
+#define BT_ACL_DH5		(1<<15)
 /* bt hci asynchronous packet, header 4, data max 27, total 31 bytes
  * h_f :
  * - 12 bits handle, identification of logical link
@@ -154,6 +185,17 @@ struct bt_acl {
 	uint8_t			data[27];
 } __packed;
 
+/* SCO Packet types bitmask which may be used for "Setup Synchronous Connection" */
+#define BT_SCO_HV1		(1<<0)
+#define BT_SCO_HV2		(1<<1)
+#define BT_SCO_HV3		(1<<2)
+#define BT_SCO_EV3		(1<<3)
+#define BT_SCO_EV4		(1<<4)
+#define BT_SCO_EV5		(1<<5)
+#define BT_SCO_NO_2MBPS_EV3	(1<<6) /* shall not be used */
+#define BT_SCO_NO_3MBPS_EV3	(1<<7) /* shall not be used */
+#define BT_SCO_NO_2MBPS_EV5	(1<<8) /* shall not be used */
+#define BT_SCO_NO_3MBPS_EV5	(1<<9) /* shall not be used */
 /* bt hci sychronous packet, header 3, data max 28, total 31 bytes
  * h_f :
  * - 12 bits handle, identification of logical link

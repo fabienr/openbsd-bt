@@ -186,12 +186,12 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 {
 	struct bluetooth_softc *sc;
 	union {
-		struct bt_hci_info_version version;
 		struct bt_hci_info_bdaddr bdaddr;
-		struct bt_hci_info_commands commands;
+		struct bt_hci_info_version version;
+		struct bt_hci_info_buffer buffer;
 		struct bt_hci_info_features features;
 		struct bt_hci_info_extended extended;
-		struct bt_hci_info_buffer buffer;
+		struct bt_hci_info_commands commands;
 	} hci;
 	struct bluetooth_info *info;
 	struct bluetooth_info_extended *info_ext;
@@ -206,6 +206,12 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		info = (struct bluetooth_info *)addr;
 		memset(addr, 0, sizeof(*info)); /* XXX not required, safer ? */
 
+		err = bthci_info_bdaddr(sc->hci, &hci.bdaddr);
+		if (err)
+			goto fail;
+		memcpy(&info->bt_addr, &hci.bdaddr.bdaddr,
+		    sizeof(info->bt_addr));
+
 		err = bthci_info_version(sc->hci, &hci.version);
 		if (err)
 			goto fail;
@@ -214,12 +220,6 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		info->hci_revision = hci.version.hci_revision;
 		info->lmp_version = hci.version.lmp_version;
 		info->lmp_revision = hci.version.lmp_revision;
-
-		err = bthci_info_bdaddr(sc->hci, &hci.bdaddr);
-		if (err)
-			goto fail;
-		memcpy(&info->bt_addr, &hci.bdaddr.bdaddr,
-		    sizeof(info->bt_addr));
 
 		err = bthci_info_buffer(sc->hci, &hci.buffer);
 		if (err)
@@ -237,7 +237,7 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		err = bthci_info_features(sc->hci, &hci.features);
 		if (err)
 			goto fail;
-		memcpy(&info_ext->features[0][0], &hci.commands.bitmask,
+		memcpy(&info_ext->features[0][0], &hci.features.bitmask,
 		    sizeof(info_ext->features));
 		info_ext->flow_control_lag = 0;
 		info_ext->flow_control_lag |= (info_ext->features[0][2] & (1<<6));
@@ -246,12 +246,6 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		info_ext->flow_control_lag <<= 1;
 		info_ext->flow_control_lag |= (info_ext->features[0][2] & (1<<4));
 		info_ext->flow_control_lag <<= 8; /* in unit of 256 bytes */
-
-		err = bthci_info_commands(sc->hci, &hci.commands);
-		if (err)
-			goto fail;
-		memcpy(&info_ext->commands, &hci.commands.bitmask,
-		    sizeof(*info_ext->commands));
 
 		err = bthci_info_extended(sc->hci, 0, &hci.extended);
 		if (err)
@@ -270,6 +264,12 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			    sizeof(*info_ext->features));
 			i--;
 		}
+
+		err = bthci_info_commands(sc->hci, &hci.commands);
+		if (err)
+			goto fail;
+		memcpy(&info_ext->commands, &hci.commands.bitmask,
+		    sizeof(*info_ext->commands));
 		break;
 
 	case DIOCBTINQUIRY:
@@ -341,7 +341,7 @@ bluetooth_kthread(void *priv)
 	int err = 0;
 
 	sc = (struct bluetooth_softc *)priv;
-	DPRINTF(("%s: bluetooth_kthread\n", DEVNAME(sc)));
+	DPRINTF(("%s: kthread\n", DEVNAME(sc)));
 
 	/* XXX bthci_* can sleep, avoid locking ? */
 	rw_enter_write(&sc->lock);
@@ -354,10 +354,13 @@ bluetooth_kthread(void *priv)
 		sc->state = BT_STATE_DYING;
 	else
 		sc->state = BT_STATE_WAITING;
+	DPRINTF(("%s: kthread init done, state=%d, count=%d\n",
+	    DEVNAME(sc), sc->state, sc->count));
+
 	while(sc->state != BT_STATE_DYING) {
 		err = 0;
 		while((evt = bthci_read_evt(sc->hci)) != NULL) {
-			DPRINTF(("%s: kthread state=%d, count=%d\n",
+			DPRINTF(("%s: kthread event, state=%d, count=%d\n",
 			    DEVNAME(sc), sc->state, sc->count));
 			switch (sc->state) {
 			case BT_STATE_INQUIRY:
@@ -403,6 +406,7 @@ bluetooth_kthread(void *priv)
 int
 bluetooth_init(struct bluetooth_softc *sc)
 {
+	struct bt_hci_info_features features;
 	int err;
 	if ((err = bthci_cb_reset(sc->hci))) {
 		printf("%s: bthci_attach reset fail, err=%d\n",
@@ -414,7 +418,51 @@ bluetooth_init(struct bluetooth_softc *sc)
 		    DEVNAME(sc), err);
 		goto fail;
 	}
-	
+	if ((err = bthci_info_features(sc->hci, &features))) {
+		printf("%s: bthci_info_features fail, err=%d\n",
+		    DEVNAME(sc), err);
+		goto fail;
+	}
+	/* ACL packet type */
+	sc->acl_type = BT_ACL_DM1 | BT_ACL_DH1;
+	if ((features.bitmask[0] & BT_HCI_FEATURE_0_3SLOT) != 0)
+		sc->acl_type |= BT_ACL_DM3 | BT_ACL_DH3;
+	if ((features.bitmask[0] & BT_HCI_FEATURE_0_5SLOT) != 0)
+		sc->acl_type |= BT_ACL_DM5 | BT_ACL_DH5;
+	if ((features.bitmask[3] & BT_HCI_FEATURE_3_EDRACL2MBPS) == 0)
+		sc->acl_type |= BT_ACL_NO_2MBPS_DH1
+		    | BT_ACL_NO_2MBPS_DH3
+		    | BT_ACL_NO_2MBPS_DH5;
+	if ((features.bitmask[3] & BT_HCI_FEATURE_3_EDRACL3MBPS) == 0)
+		sc->acl_type |= BT_ACL_NO_3MBPS_DH1
+		    | BT_ACL_NO_3MBPS_DH3
+		    | BT_ACL_NO_3MBPS_DH5;
+	if ((features.bitmask[4] & BT_HCI_FEATURE_4_3SLOTSEDRACL) == 0)
+		sc->acl_type |= BT_ACL_NO_2MBPS_DH3 | BT_ACL_NO_3MBPS_DH3;
+	if ((features.bitmask[5] & BT_HCI_FEATURE_5_5SLOTSEDRACL) == 0)
+		sc->acl_type |= BT_ACL_NO_2MBPS_DH5 | BT_ACL_NO_3MBPS_DH5;
+	/* SCO packet mask */
+	sc->sco_type = 0;
+	if ((features.bitmask[1] & BT_HCI_FEATURE_1_SC0) != 0 )
+		sc->sco_type |= BT_SCO_HV1;
+	if ((features.bitmask[1] & BT_HCI_FEATURE_1_HV2) != 0 )
+		sc->sco_type |= BT_SCO_HV2;
+	if ((features.bitmask[1] & BT_HCI_FEATURE_1_HV3) != 0 )
+		sc->sco_type |= BT_SCO_HV3;
+	if ((features.bitmask[3] & BT_HCI_FEATURE_3_EV3) != 0 )
+		sc->sco_type |= BT_SCO_EV3;
+	if ((features.bitmask[4] & BT_HCI_FEATURE_4_EV4) != 0 )
+		sc->sco_type |= BT_SCO_EV4;
+	if ((features.bitmask[4] & BT_HCI_FEATURE_4_EV5) != 0 )
+		sc->sco_type |= BT_SCO_EV5;
+	if ((features.bitmask[5] & BT_HCI_FEATURE_5_EDRSCO2MBPS) == 0)
+		sc->sco_type |= BT_SCO_NO_2MBPS_EV3 | BT_SCO_NO_2MBPS_EV5;
+	if ((features.bitmask[5] & BT_HCI_FEATURE_5_EDRSCO3MBPS) == 0)
+		sc->sco_type |= BT_SCO_NO_3MBPS_EV3 | BT_SCO_NO_3MBPS_EV5;
+	if ((features.bitmask[5] & BT_HCI_FEATURE_5_3SLOTSEDRSCO) == 0) {
+		sc->sco_type &= ~BT_SCO_EV4;
+		sc->sco_type |= BT_SCO_NO_2MBPS_EV5 | BT_SCO_NO_3MBPS_EV5;
+	}
  fail:
 	return (err);
 }

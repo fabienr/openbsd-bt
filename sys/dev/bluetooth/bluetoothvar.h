@@ -16,6 +16,7 @@
  */
 
 #define BTPRI			PRIBIO /* XXX to change for something else ? */
+
 #define BT_TIMEOUT		SEC_TO_NSEC(1)
 #define BT_INQUIRY_INTERVAL	SEC_TO_NSEC(5)
 #define BT_INQUIRY_TIMEOUT	30
@@ -25,7 +26,7 @@
 #define BT_STATE_DEVOPEN	3
 #define BT_STATE_INQUIRY	4
 
-#define BT_EVTS_POOLSIZE	32
+#define BT_EVTS_POOLSIZE	32 /* XXX move into bthci.h/c ? */
 
 struct bt_cmd;
 struct bt_evt;
@@ -55,6 +56,10 @@ struct bluetooth_softc {
 	struct device			 sc_dev;
 	struct bthci			*hci;
 	struct rwlock			 lock; /* XXX actually, a mutex feet */
+
+	/* HCI dynamic parameters */
+	uint16_t			 acl_type;
+	uint16_t			 sco_type;
 
 	/* Userland IO */
 	struct bluetooth_dev_ios	 fifo;
