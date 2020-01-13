@@ -149,10 +149,10 @@ btconfig_open(int dev, int unit)
 		btwarn("DIOCBTINFO");
 		return;
 	}
-	printf("%0X#", unit);
+	printf("%0X# ", unit);
 	for (i = BT_ADDR_LEN; --i >= 0;)
 		printf("%0X%c", info.bt_addr.b[i], (i)?':':' ');
-	printf(" %s\n"
+	printf("%s\n"
 	    "HCI %s (rev %d)\n"
 	    "LMP %s (rev %d)\n"
 	    "ACL buffer of %d packets with %d bytes payload\n"
