@@ -75,11 +75,17 @@ bluetooth_attach(struct bluetooth_softc *sc, struct bthci *hci)
 void
 bluetooth_detach(struct bluetooth_softc *sc)
 {
+	struct bluetooth_device_unit *dev = NULL;
 	DPRINTF(("%s: bluetooth_detach\n", DEVNAME(sc)));
 	wakeup(sc);
+	wakeup(&sc->fifo);
 	rw_enter_write(&sc->lock);
 	sc->state = BT_STATE_DYING;
-	wakeup(sc);
+	while (!SLIST_EMPTY(&sc->devices)) {
+		dev = SLIST_FIRST(&sc->devices);
+		SLIST_REMOVE_HEAD(&sc->devices, sl);
+		free(dev, M_BLUETOOTH, sizeof(*dev));
+	}
 	/* XXX assert fifo is empty, ensure memory is clean */
 	rw_exit_write(&sc->lock);
 }
