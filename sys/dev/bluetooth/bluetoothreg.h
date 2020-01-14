@@ -20,7 +20,7 @@
 	printf("%s: cmd head(op=%04X, len=%d), data",				\
 	    (devname), (cmd)->head.op, (cmd)->head.len);			\
 	for (int i = 0; i < (cmd)->head.len; i++)				\
-		printf(" %02x ", (cmd)->data[i]);				\
+		printf(" %02x", (cmd)->data[i]);				\
 	printf("\n");								\
 } while(0)
 #define DUMP_BT_EVT(devname, evt) do {						\
@@ -38,6 +38,8 @@
 /* Bluetooth Link Control commands */
 #define BT_HCI_OGF_LC			0x01
 #define BT_HCI_OCF_INQUIRY		0x0001
+#define BT_HCI_OCF_CONNECTION		0x0005
+#define BT_HCI_OCF_DISCONNECT		0x0006
 #define BT_HCI_OCF_REMOTE_NAME		0x0019
 /* Bluetooth Link Policy commands */
 #define BT_HCI_OGF_LP			0x02

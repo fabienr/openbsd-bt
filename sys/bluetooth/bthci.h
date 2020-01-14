@@ -45,7 +45,8 @@ void bthci_write_evt(struct bthci *, struct bt_evt *);
 struct bt_evt *bthci_read_evt(struct bthci *);
 
 int bthci_lc_inquiry(struct bthci *, uint64_t, int);
-
+int bthci_lc_connect(struct bthci *, uint16_t, struct bluetooth_device *);
+int bthci_lc_disconnect(struct bthci *, uint16_t);
 int bthci_lc_remote_name(struct bthci *, struct bluetooth_bdaddr *,
     uint8_t, uint16_t);
 

@@ -48,7 +48,6 @@
 #define DEVNAME(hci) ((hci)->sc->dv_xname)
 
 /* private registers */
-/* XXX consider adding unint8_t state even if not clearly specified in specs */
 struct bthci_cmd_complete {
 	uint8_t			buff_sz;
 	uint16_t		op;
@@ -172,6 +171,10 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 			pool_put(&hci->evts, evt);
 			return;
 		}
+#ifdef BTHCI_DEBUG
+		if (hci->evt_filter == evt->head.op)
+			DUMP_BT_EVT_COMPLETE(hci, cmd_complete);
+#endif /* BTHCI_DEBUG */
 	} else if (evt->head.op == BT_EVT_CMD_STATE) {
 		if (evt->head.len < sizeof(struct bthci_cmd_state)) {
 			DUMP_BT_EVT(DEVNAME(hci), evt);
@@ -187,6 +190,10 @@ bthci_write_evt(struct bthci *hci, struct bt_evt *evt)
 			pool_put(&hci->evts, evt);
 			return;
 		}
+#ifdef BTHCI_DEBUG
+		if (hci->evt_filter == evt->head.op)
+			DUMP_BT_EVT_STATE(hci, cmd_state);
+#endif /* BTHCI_DEBUG */
 	}
 	/* catch event related to bthci_cmd and wake it up */
 	if (hci->evt_filter == evt->head.op) {
@@ -258,7 +265,7 @@ bthci_lc_inquiry(struct bthci *hci, uint64_t timeout, int limit)
 		uint8_t lap[3];
 		uint8_t timeout;
 		uint8_t limit;
-	} * inquiry;
+	} __packed * inquiry;
 	int err;
 	DPRINTF(("%s: bthci_lc_inquiry(%llu second, %d limit)\n",
 	    DEVNAME(hci), timeout / 1000000000ULL, limit));
@@ -293,6 +300,55 @@ bthci_lc_inquiry(struct bthci *hci, uint64_t timeout, int limit)
 	return (err);
 }
 
+#define BT_HCI_LC_CONNECT	(BT_HCI_OCF_CONNECTION|(BT_HCI_OGF_LC<<10))
+int
+bthci_lc_connect(struct bthci *hci, uint16_t acl_type,
+    struct bluetooth_device *dev)
+{
+	struct lc_connection {
+		struct bluetooth_bdaddr	bdaddr;
+		uint16_t		acl_type;
+		uint8_t			scan_mode;
+		uint8_t			reserved;
+		uint16_t		clock;
+		uint8_t			role_switch;
+	} __packed *connection;
+	int err = 0, i;
+#ifdef BTHCI_DEBUG
+	DPRINTF(("%s: bthci_lc_connect(%000X, [#%X, ",
+	    DEVNAME(hci), acl_type, dev->unit));
+	for (i = BT_ADDR_LEN; --i >= 0;)
+		DPRINTF(("%0X%c", dev->bt_addr.b[i], (i)?':':','));
+	DPRINTF((" %u, %000x])\n", dev->bt_scan_mode, dev->bt_clock));
+#endif /* BTHCI_DEBUG */
+	if ((err = bthci_enter(hci)) != 0)
+		return (err);
+	hci->cmd.head.op = htole16(BT_HCI_LC_CONNECT);
+	hci->cmd.head.len = sizeof(*connection);
+	connection = (struct lc_connection *)&hci->cmd.data;
+	for (i = BT_ADDR_LEN; --i >= 0;)
+		connection->bdaddr.b[i] = dev->bt_addr.b[i];
+	connection->acl_type = acl_type;
+	connection->scan_mode = dev->bt_scan_mode;
+	connection->clock = dev->bt_clock;
+	connection->role_switch = 0; /* XXX depends on controller ? */
+	if ((err = bthci_cmd(hci, BT_EVT_CMD_STATE)))
+		goto fail;
+	if ((err = bthci_cmd_state(hci)))
+		goto fail;
+ fail:
+	bthci_leave(hci);
+	return (err);
+}
+
+#define BT_HCI_LC_DISCONNECT	(BT_HCI_OCF_DISCONNECT|(BT_HCI_OGF_LC<<10))
+int
+bthci_lc_disconnect(struct bthci *hci, uint16_t handle)
+{
+	/* XXX not implemented yet */
+	return (0);
+}
+
 #define BT_HCI_LC_REMOTE_NAME	(BT_HCI_OCF_REMOTE_NAME|(BT_HCI_OGF_LC<<10))
 int
 bthci_lc_remote_name(struct bthci *hci, struct bluetooth_bdaddr *bdaddr,
@@ -303,7 +359,7 @@ bthci_lc_remote_name(struct bthci *hci, struct bluetooth_bdaddr *bdaddr,
 		uint8_t			mode;
 		uint8_t			reserved;
 		uint16_t		clock;
-	} *remote_name;
+	} __packed *remote_name;
 	int err;
 #ifdef BTHCI_DEBUG
 	int i;
@@ -517,11 +573,18 @@ bthci_cmd_complete(struct bthci *hci, void *dest, int len)
 		return (EPROTO);
 	}
 	cmd_complete = (struct bthci_evt_complete *)hci->evt;
-	if (dest && (cmd_complete->head.len - sizeof(struct bthci_cmd_complete)
-	    == len))
+	if (cmd_complete->head.len - sizeof(struct bthci_cmd_complete) != len) {
+		if (dest && len) 
+			memset(dest, 0, len); /* XXX not required, safer ? */
+		printf("%s: cmd_complete event len mismatch, %u - %zu != %d\n",
+		    DEVNAME(hci),
+		    cmd_complete->head.len,
+		    sizeof(struct bthci_cmd_complete),
+		    len);
+		return (EPROTO);
+	}
+	if (dest && len)
 		memcpy(dest, cmd_complete->data, len);
-	else if (dest && len)
-		memset(dest, 0, len);
 	err = BT_ERR_TOH(cmd_complete->event.state);
 	pool_put(&hci->evts, hci->evt);
 	hci->evt = NULL;
@@ -538,10 +601,6 @@ bthci_void(struct bthci *hci, void *info, int len, int op)
 	hci->cmd.head.len = 0;
 	if ((err = bthci_cmd(hci, BT_EVT_CMD_COMPLETE)))
 		goto fail;
-	if (info == NULL) {
-		info = &err;
-		len = 1;
-	}
 	if ((err = bthci_cmd_complete(hci, info, len)))
 		goto fail;
  fail:

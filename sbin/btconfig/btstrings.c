@@ -2295,6 +2295,7 @@ btlmpversion(int lmp_vesion)
 	return (bt_lmpversion_strs[lmp_vesion]);
 }
 
+/* bt_commandbitmask_strs nitems shall be multiple of 8 */
 struct bt_commandbitmask_str {
 	uint8_t		 byte;
 	uint8_t		 bit;
@@ -2646,14 +2647,14 @@ btcommandbitmask(uint8_t byte, uint8_t bit)
 		return ("Reserved for future use");
 	if (bit >= 8)
 		return ("invalid command bitmask bit");
-	for (i=0; i < nitems(bt_commandbitmask_strs); i++) {
+	for (i=byte*8; i < nitems(bt_commandbitmask_strs); i++) {
 		bitmask = &bt_commandbitmask_strs[i];
 		if (bitmask->byte == byte && bitmask->bit == bit)
 			return (bitmask->desc);
 		else if (bitmask->byte > byte)
 			break;
 	}
-	return ("Reserved for future use");
+	return ("invalid command byte/bitmask");
 }
 
 struct bt_featurebitmask_str {

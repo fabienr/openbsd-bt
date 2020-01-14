@@ -60,6 +60,8 @@ struct bluetooth_device *bluetooth_device_loockup(struct bluetooth_softc *,
     struct bluetooth_bdaddr *);
 struct bluetooth_device *bluetooth_device_new(struct bluetooth_softc *,
     struct bluetooth_bdaddr *, uint8_t, struct bluetooth_class *, uint16_t);
+struct bluetooth_device *bluetooth_device_unit(struct bluetooth_softc *,
+    uint8_t);
 
 void
 bluetooth_attach(struct bluetooth_softc *sc, struct bthci *hci)
@@ -77,9 +79,9 @@ bluetooth_detach(struct bluetooth_softc *sc)
 {
 	struct bluetooth_device_unit *dev = NULL;
 	DPRINTF(("%s: bluetooth_detach\n", DEVNAME(sc)));
+	rw_enter_write(&sc->lock);
 	wakeup(sc);
 	wakeup(&sc->fifo);
-	rw_enter_write(&sc->lock);
 	sc->state = BT_STATE_DYING;
 	while (!SLIST_EMPTY(&sc->devices)) {
 		dev = SLIST_FIRST(&sc->devices);
@@ -193,8 +195,12 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		struct bt_hci_info_extended extended;
 		struct bt_hci_info_commands commands;
 	} hci;
-	struct bluetooth_info *info;
-	struct bluetooth_info_extended *info_ext;
+	union {
+		struct bluetooth_info *info;
+		struct bluetooth_info_extended *info_ext;
+		struct bluetooth_device_match *match;
+	} ctl;
+	struct bluetooth_device *device;
 	int err = 0, i;
 
 	sc = bluetooth_cd.cd_devs[BLUETOOTHUNIT(dev)];
@@ -203,49 +209,52 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 
 	switch (cmd) {
 	case DIOCBTINFO:
-		info = (struct bluetooth_info *)addr;
-		memset(addr, 0, sizeof(*info)); /* XXX not required, safer ? */
+		ctl.info = (struct bluetooth_info *)addr;
+		memset(addr, 0, sizeof(*ctl.info)); /* XXX not required, safer ? */
 
 		err = bthci_info_bdaddr(sc->hci, &hci.bdaddr);
 		if (err)
 			goto fail;
-		memcpy(&info->bt_addr, &hci.bdaddr.bdaddr,
-		    sizeof(info->bt_addr));
+		memcpy(&ctl.info->bt_addr, &hci.bdaddr.bdaddr,
+		    sizeof(ctl.info->bt_addr));
 
 		err = bthci_info_version(sc->hci, &hci.version);
 		if (err)
 			goto fail;
-		info->bt_manufacturer = hci.version.bt_manufacturer;
-		info->hci_version = hci.version.hci_version;
-		info->hci_revision = hci.version.hci_revision;
-		info->lmp_version = hci.version.lmp_version;
-		info->lmp_revision = hci.version.lmp_revision;
+		ctl.info->bt_manufacturer = hci.version.bt_manufacturer;
+		ctl.info->hci_version = hci.version.hci_version;
+		ctl.info->hci_revision = hci.version.hci_revision;
+		ctl.info->lmp_version = hci.version.lmp_version;
+		ctl.info->lmp_revision = hci.version.lmp_revision;
 
 		err = bthci_info_buffer(sc->hci, &hci.buffer);
 		if (err)
 			goto fail;
-		info->acl_size = hci.buffer.acl_size;
-		info->acl_bufferlen = hci.buffer.acl_bufferlen;
-		info->sco_size = hci.buffer.sco_size;
-		info->sco_bufferlen = hci.buffer.sco_bufferlen;
+		ctl.info->acl_size = hci.buffer.acl_size;
+		ctl.info->acl_bufferlen = hci.buffer.acl_bufferlen;
+		ctl.info->sco_size = hci.buffer.sco_size;
+		ctl.info->sco_bufferlen = hci.buffer.sco_bufferlen;
 		break;
 
 	case DIOCBTINFOEXT:
-		info_ext = (struct bluetooth_info_extended *)addr;
-		memset(addr, 0, sizeof(*info_ext)); /* XXX not required, safer ? */
+		ctl.info_ext = (struct bluetooth_info_extended *)addr;
+		memset(addr, 0, sizeof(*ctl.info_ext)); /* XXX not required, safer ? */
 
 		err = bthci_info_features(sc->hci, &hci.features);
 		if (err)
 			goto fail;
-		memcpy(&info_ext->features[0][0], &hci.features.bitmask,
-		    sizeof(info_ext->features));
-		info_ext->flow_control_lag = 0;
-		info_ext->flow_control_lag |= (info_ext->features[0][2] & (1<<6));
-		info_ext->flow_control_lag <<= 1;
-		info_ext->flow_control_lag |= (info_ext->features[0][2] & (1<<5));
-		info_ext->flow_control_lag <<= 1;
-		info_ext->flow_control_lag |= (info_ext->features[0][2] & (1<<4));
-		info_ext->flow_control_lag <<= 8; /* in unit of 256 bytes */
+		memcpy(&ctl.info_ext->features[0][0], &hci.features.bitmask,
+		    sizeof(ctl.info_ext->features[0]));
+		ctl.info_ext->flow_control_lag = 0;
+		ctl.info_ext->flow_control_lag |= (
+		    ctl.info_ext->features[0][2] & (1<<6));
+		ctl.info_ext->flow_control_lag <<= 1;
+		ctl.info_ext->flow_control_lag |= (
+		    ctl.info_ext->features[0][2] & (1<<5));
+		ctl.info_ext->flow_control_lag <<= 1;
+		ctl.info_ext->flow_control_lag |= (
+		    ctl.info_ext->features[0][2] & (1<<4));
+		ctl.info_ext->flow_control_lag <<= 8; /* in unit of 256 bytes */
 
 		err = bthci_info_extended(sc->hci, 0, &hci.extended);
 		if (err)
@@ -260,16 +269,17 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			err = bthci_info_extended(sc->hci, i, &hci.extended);
 			if (err)
 				break;
-			memcpy(&info_ext->features[i][0], &hci.extended.bitmask,
-			    sizeof(*info_ext->features));
+			memcpy(&ctl.info_ext->features[i][0],
+			    &hci.extended.bitmask,
+			    sizeof(ctl.info_ext->features[i]));
 			i--;
 		}
 
 		err = bthci_info_commands(sc->hci, &hci.commands);
 		if (err)
 			goto fail;
-		memcpy(&info_ext->commands, &hci.commands.bitmask,
-		    sizeof(*info_ext->commands));
+		memcpy(&ctl.info_ext->commands, &hci.commands.bitmask,
+		    sizeof(ctl.info_ext->commands));
 		break;
 
 	case DIOCBTINQUIRY:
@@ -285,6 +295,28 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			printf("%s: inquiry count reset\n", DEVNAME(sc));
 		/* wakeup blutooth_kthread */
 		wakeup(sc);
+		break;
+
+	case DIOCBTMATCH:
+		ctl.match = (struct bluetooth_device_match *)addr;
+		if (ctl.match->unit > 0)
+			device = bluetooth_device_unit(sc, ctl.match->unit);
+		else
+			device = bluetooth_device_loockup(sc, &ctl.match->bt_addr);
+		if (device == NULL) {
+			err = EINVAL;
+			goto fail;
+		}
+		sc->state = BT_STATE_CONNECT;
+		sc->count++;
+		err = bthci_lc_connect(sc->hci, sc->acl_type, device);
+		if (err)
+			goto fail;
+		if (sc->count) {
+			getnanotime(&sc->start);
+			sc->timeout = BT_CONNECT_TIMEOUT;
+		} else
+			printf("%s: connect count reset\n", DEVNAME(sc));
 		break;
 
 	default:
@@ -506,6 +538,10 @@ bluetooth_inquiry(struct bluetooth_softc *sc, struct bt_evt *evt)
 			    DEVNAME(sc), inquiry.ndevices);
 			goto fail;
 		}
+		/* XXX ndevices > 1 untested */
+		if (inquiry.ndevices < 1)
+			printf("%s: pls report to tech@, inquiry ndevices %d\n",
+			    DEVNAME(sc), inquiry.ndevices);
 		len = inquiry.ndevices * (sizeof(*inquiry.bdaddrs)
 		    + sizeof(*inquiry.scan_mode) + sizeof(*inquiry.classes)
 		    + sizeof(*inquiry.clocks) + 2); /* +2 reserved field */
@@ -637,6 +673,13 @@ bluetooth_device_new(struct bluetooth_softc *sc, struct bluetooth_bdaddr *bdaddr
     uint8_t scan_mode, struct bluetooth_class *class, uint16_t clock)
 {
 	struct bluetooth_device_unit *dev = NULL;
+#ifdef BT_DEBUG
+	int i;
+	printf("%s: new ", DEVNAME(sc));
+	for (i = BT_ADDR_LEN; --i >= 0;)
+		printf("%0X%c", bdaddr->b[i], (i)?':':' ');
+	printf("\n");
+#endif
 	dev = malloc(sizeof(*dev), M_BLUETOOTH, M_WAITOK|M_CANFAIL|M_ZERO);
 	if (dev == NULL)
 		return (NULL);
@@ -649,3 +692,14 @@ bluetooth_device_new(struct bluetooth_softc *sc, struct bluetooth_bdaddr *bdaddr
 	return ((struct bluetooth_device *)dev);
 }
 
+struct bluetooth_device *
+bluetooth_device_unit(struct bluetooth_softc *sc, uint8_t unit)
+{
+	struct bluetooth_device_unit *dev = NULL;
+	DPRINTF(("%s: device unit %d\n", DEVNAME(sc), unit));
+	SLIST_FOREACH(dev, &sc->devices, sl) {
+		if (dev->unit.unit == unit)
+			break;
+	}
+	return ((struct bluetooth_device *)dev);
+}

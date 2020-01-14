@@ -14,3 +14,13 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
+
+#include <sys/queue.h>
+#include <bluetooth/bluetooth.h>
+
+struct btconfig_hci {
+	int				unit;
+	struct bluetooth_info		info;
+	SLIST_ENTRY(btconfig_hci)	sl;
+};
+SLIST_HEAD(btconfig_hcis, btconfig_hci);

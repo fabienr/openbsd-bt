@@ -20,11 +20,13 @@
 #define BT_TIMEOUT		SEC_TO_NSEC(1)
 #define BT_INQUIRY_INTERVAL	SEC_TO_NSEC(5)
 #define BT_INQUIRY_TIMEOUT	30
+#define BT_CONNECT_TIMEOUT	10
 #define BT_STATE_INIT		0
 #define BT_STATE_DYING		1
 #define BT_STATE_WAITING	2
 #define BT_STATE_DEVOPEN	3
 #define BT_STATE_INQUIRY	4
+#define BT_STATE_CONNECT	5
 
 #define BT_EVTS_POOLSIZE	32 /* XXX move into bthci.h/c ? */
 

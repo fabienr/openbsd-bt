@@ -108,6 +108,7 @@ struct bluetooth_class {
 	uint8_t		c[3];
 };
 
+/* XXX rename into _version, implement btconfig -v (version) -vv (_extended) */
 struct bluetooth_info {
 	struct bluetooth_bdaddr	bt_addr;
 	uint16_t	bt_manufacturer; /* see btstrings.c */
@@ -141,5 +142,11 @@ struct bluetooth_device {
 	uint16_t		bt_clock;
 	char			name[248]; /* XXX see BT_EVT_MAX_PAYLOAD */
 };
+
+struct bluetooth_device_match {
+	uint8_t			unit;
+	struct bluetooth_bdaddr	bt_addr;
+};
+#define DIOCBTMATCH	_IOW('B', 4, struct bluetooth_device_match)
 
 #endif /* _NET_BLUETOOTH_H_ */
