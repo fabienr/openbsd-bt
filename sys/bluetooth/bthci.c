@@ -129,7 +129,13 @@ bthci_register(struct bthci *hci, void *ident)
 void
 bthci_destroy(struct bthci *hci)
 {
+	struct bthci_evt *evt;
 	DPRINTF(("%s: bthci_destroy\n", DEVNAME(hci)));
+	while (!SIMPLEQ_EMPTY(&hci->fifo)) {
+		evt = SIMPLEQ_FIRST(&hci->fifo);
+		SIMPLEQ_REMOVE_HEAD(&hci->fifo, fifo);
+		pool_put(&hci->evts, evt);
+	}
 	pool_destroy(&hci->evts);
 }
 
@@ -305,14 +311,14 @@ int
 bthci_lc_connect(struct bthci *hci, uint16_t acl_type,
     struct bluetooth_device *dev)
 {
-	struct lc_connection {
+	struct lc_connect {
 		struct bluetooth_bdaddr	bdaddr;
 		uint16_t		acl_type;
 		uint8_t			scan_mode;
 		uint8_t			reserved;
 		uint16_t		clock;
 		uint8_t			role_switch;
-	} __packed *connection;
+	} __packed *connect;
 	int err = 0, i;
 #ifdef BTHCI_DEBUG
 	DPRINTF(("%s: bthci_lc_connect(%000X, [#%X, ",
@@ -324,14 +330,14 @@ bthci_lc_connect(struct bthci *hci, uint16_t acl_type,
 	if ((err = bthci_enter(hci)) != 0)
 		return (err);
 	hci->cmd.head.op = htole16(BT_HCI_LC_CONNECT);
-	hci->cmd.head.len = sizeof(*connection);
-	connection = (struct lc_connection *)&hci->cmd.data;
+	hci->cmd.head.len = sizeof(*connect);
+	connect = (struct lc_connect *)&hci->cmd.data;
 	for (i = BT_ADDR_LEN; --i >= 0;)
-		connection->bdaddr.b[i] = dev->bt_addr.b[i];
-	connection->acl_type = acl_type;
-	connection->scan_mode = dev->bt_scan_mode;
-	connection->clock = dev->bt_clock;
-	connection->role_switch = 0; /* XXX depends on controller ? */
+		connect->bdaddr.b[i] = dev->bt_addr.b[i];
+	connect->acl_type = acl_type;
+	connect->scan_mode = dev->bt_scan_mode;
+	connect->clock = dev->bt_clock;
+	connect->role_switch = 0; /* XXX depends on controller ? */
 	if ((err = bthci_cmd(hci, BT_EVT_CMD_STATE)))
 		goto fail;
 	if ((err = bthci_cmd_state(hci)))
@@ -345,8 +351,29 @@ bthci_lc_connect(struct bthci *hci, uint16_t acl_type,
 int
 bthci_lc_disconnect(struct bthci *hci, uint16_t handle)
 {
-	/* XXX not implemented yet */
-	return (0);
+	struct lc_disconnect {
+		uint16_t		handle;
+		uint8_t			reason;
+	} __packed *disconnect;
+	int err = 0;
+
+	DPRINTF(("%s: bthci_lc_disconnect(%000X)\n",
+	    DEVNAME(hci), handle));
+	if ((err = bthci_enter(hci)) != 0)
+		return (err);
+
+	hci->cmd.head.op = htole16(BT_HCI_LC_DISCONNECT);
+	hci->cmd.head.len = sizeof(*disconnect);
+	disconnect = (struct lc_disconnect *)&hci->cmd.data;
+	disconnect->handle = handle;
+	disconnect->reason = 0x13; /* XXX user terminated, see bluetooth.h */
+	if ((err = bthci_cmd(hci, BT_EVT_CMD_STATE)))
+		goto fail;
+	if ((err = bthci_cmd_state(hci)))
+		goto fail;
+ fail:
+	bthci_leave(hci);
+	return (err);
 }
 
 #define BT_HCI_LC_REMOTE_NAME	(BT_HCI_OCF_REMOTE_NAME|(BT_HCI_OGF_LC<<10))

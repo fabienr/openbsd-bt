@@ -64,7 +64,7 @@ struct bluetooth_softc {
 	uint16_t			 sco_type;
 
 	/* Userland IO */
-	struct bluetooth_dev_ios	 fifo;
+	struct bluetooth_dev_ios	 rxfifo;
 
 	/* State are changed by userland dev api on open, ioctl, read and close.
 	 * When needed, the ioctl can start a new state with at least a count of
