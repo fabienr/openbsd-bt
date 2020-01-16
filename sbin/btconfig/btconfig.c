@@ -225,10 +225,11 @@ main(int argc, char **argv)
 		btconfig_inquiry(dev, dev_minor);
 		break;
 	case BTCONFIG_MATCH:
-		printf("%d || ", device.unit);
+		/* XXX debug */
+		printf("match on controller %d, device %d or ", dev_minor, device.unit);
 		for (i = BT_ADDR_LEN; --i >= 0;)
 			printf("%0X%c", device.bt_addr.b[i], (i)?':':' ');
-		printf("\r\n");
+		printf(" : \r\n");
 		if (device.unit == 0 && device.bt_addr.b[0] == 0) {
 			warnx("-m : remote device unit or addresse needed");
 			usage();
@@ -353,10 +354,8 @@ btconfig_inquiry(int dev, int dev_minor)
 		fflush(stdout);
 	}
 	free(device);
-	if (k != 0) {
-		btwarn("read device");
-		return;
-	}
+	if (k < 0)
+		btwarn("inquiry");
 	return;
 }
 

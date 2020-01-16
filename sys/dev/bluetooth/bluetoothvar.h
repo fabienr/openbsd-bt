@@ -43,6 +43,7 @@ struct btbus {
 
 struct bluetooth_dev_io {
 	size_t				 size;
+	int				 err;
 	SIMPLEQ_ENTRY(bluetooth_dev_io)	 fifo;
 	uint8_t				 buf; /* first bytes of buf */
 };
