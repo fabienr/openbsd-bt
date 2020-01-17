@@ -276,8 +276,9 @@ ubt_detach(struct device *self, int flags)
 	DPRINTF(("%s: ubt_detach\n", DEVNAME(usc)));
 
 	usbd_ref_wait(usc->sc_udev);
+	bthci_die(&usc->hci);
 	bluetooth_detach(&usc->sc_sc);
-	bthci_destroy(&usc->hci);
+	bthci_free(&usc->hci);
 	ubt_close_pipes(usc);
 	ubt_free_xfers(usc);
 
@@ -476,7 +477,7 @@ ubt_cmd(struct device *sc, const struct bt_cmd *pkt)
 	usbd_status		 err;
 
 #ifdef UBT_DEBUG
-	DPRINTF(("ubt_cmd\n"));
+	DPRINTF(("%s: ubt_cmd\n", DEVNAME(usc)));
 	DUMP_BT_CMD(DEVNAME(usc), pkt);
 #endif
 

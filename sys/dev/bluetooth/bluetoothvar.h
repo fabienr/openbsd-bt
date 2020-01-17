@@ -18,9 +18,10 @@
 #define BTPRI			PRIBIO /* XXX to change for something else ? */
 
 #define BT_TIMEOUT		SEC_TO_NSEC(1)
-#define BT_INQUIRY_INTERVAL	SEC_TO_NSEC(5)
-#define BT_INQUIRY_TIMEOUT	30
-#define BT_CONNECT_TIMEOUT	10
+#define BT_TIMEOUT_INQUIRY	SEC_TO_NSEC(5)
+#define BT_TIMEOUT_CONNECT	SEC_TO_NSEC(5) /* XXX to check */
+#define BT_TIMEOUT_DISCONNECT	SEC_TO_NSEC(5) /* XXX to check */
+#define BT_TIMEOUT_REMOTE_NAME	SEC_TO_NSEC(5) /* XXX to check */
 #define BT_STATE_INIT		0
 #define BT_STATE_DYING		1
 #define BT_STATE_WAITING	2
@@ -41,13 +42,13 @@ struct btbus {
 	int (*sco)(struct device *, const struct bt_sco *);
 };
 
-struct bluetooth_dev_io {
+struct bluetooth_io {
 	size_t				 size;
 	int				 err;
-	SIMPLEQ_ENTRY(bluetooth_dev_io)	 fifo;
+	SIMPLEQ_ENTRY(bluetooth_io)	 fifo;
 	uint8_t				 buf; /* first bytes of buf */
 };
-SIMPLEQ_HEAD(bluetooth_dev_ios, bluetooth_dev_io);
+SIMPLEQ_HEAD(bluetooth_ios, bluetooth_io);
 
 struct bluetooth_device_unit {
 	struct bluetooth_device			unit;
@@ -59,23 +60,15 @@ struct bluetooth_softc {
 	struct device			 sc_dev;
 	struct bthci			*hci;
 	struct rwlock			 lock; /* XXX actually, a mutex feet */
+	int				 state;
+	int				 count;
 
 	/* HCI dynamic parameters */
 	uint16_t			 acl_type;
 	uint16_t			 sco_type;
 
 	/* Userland IO */
-	struct bluetooth_dev_ios	 rxfifo;
-
-	/* State are changed by userland dev api on open, ioctl, read and close.
-	 * When needed, the ioctl can start a new state with at least a count of
-	 * one command and shall configure timeout to enable state watchdog over
-	 * seconds based on the previously set timespec start.
-	 */
-	int				 state;
-	int				 count;
-	struct timespec			 start;
-	int				 timeout;
+	struct bluetooth_ios		 rxfifo;
 
 	/* Devices unit database */
 	int				 ndevices;
