@@ -2689,7 +2689,7 @@ struct bt_featurebitmask_str {
 	{ 3, 0, "Reserved for future use"},
 	{ 3, 1, "Enhanced Data Rate ACL 2 Mb/s mode"},
 	{ 3, 2, "Enhanced Data Rate ACL 3 Mb/s mode"},
-	{ 3, 3, "Enhanced inquiry scan (see note)"},
+	{ 3, 3, "Enhanced inquiry scan (deprecated)"},
 	{ 3, 4, "Interlaced inquiry scan"},
 	{ 3, 5, "Interlaced page scan"},
 	{ 3, 6, "RSSI with inquiry results"},

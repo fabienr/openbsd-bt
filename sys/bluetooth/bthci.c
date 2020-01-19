@@ -24,7 +24,6 @@
 #include <sys/mutex.h>
 #include <sys/device.h>
 #include <sys/systm.h>
-#include <sys/mutex.h>
 #include <sys/malloc.h>
 
 #include <bluetooth/bluetooth.h>
@@ -62,7 +61,7 @@ struct bthci_evt_complete {
 #ifdef BTHCI_DEBUG
 #define DUMP_BT_EVT_COMPLETE(hci, evt) do {					\
 	DPRINTF(("%s: command complete head(op=%02X, len=%d), "			\
-	    "event(buff_sz=%d, op=%04x, state=%0x), data",			\
+	    "event(buff_sz=%d, op=%04x, state=%02x), data",			\
 	    DEVNAME(hci), (evt)->head.op, (evt)->head.len,			\
 	    (evt)->event.buff_sz, (evt)->event.op, (evt)->event.state));	\
 	for (int i = 0;								\
@@ -325,11 +324,7 @@ bthci_read_evt(struct bthci *hci)
  * 1 byte timeout : max 0x30 * 1,28s
  * 1 byte limit : 0x00 mean no limit
  */
-#define BT_HCI_LC_INQUIRY		(BT_HCI_OCF_INQUIRY|(BT_HCI_OGF_LC<<10))
-#define BT_HCI_INQUIRY_LAP_2		0x9E
-#define BT_HCI_INQUIRY_LAP_1		0x8B
-#define BT_HCI_INQUIRY_LAP_GIAC_0	0x33
-#define BT_HCI_INQUIRY_LAP_LIAC_0	0x00
+#define LC_INQUIRY		(BT_HCI_OCF_INQUIRY|(BT_HCI_OGF_LC<<10))
 int
 bthci_lc_inquiry(struct bthci *hci, uint64_t timeout, int limit)
 {
@@ -359,7 +354,7 @@ bthci_lc_inquiry(struct bthci *hci, uint64_t timeout, int limit)
 		err = EINVAL;
 		goto fail;
 	}
-	hci->cmd.head.op = htole16(BT_HCI_LC_INQUIRY);
+	hci->cmd.head.op = htole16(LC_INQUIRY);
 	hci->cmd.head.len = sizeof(*inquiry);
 	inquiry = (struct lc_inquiry *)&hci->cmd.data;
 	inquiry->lap[0] = BT_HCI_INQUIRY_LAP_GIAC_0;
@@ -388,7 +383,7 @@ bthci_lc_inquiry(struct bthci *hci, uint64_t timeout, int limit)
 	return (err);
 }
 
-#define BT_HCI_LC_CONNECT	(BT_HCI_OCF_CONNECTION|(BT_HCI_OGF_LC<<10))
+#define LC_CONNECT		(BT_HCI_OCF_CONNECTION|(BT_HCI_OGF_LC<<10))
 int
 bthci_lc_connect(struct bthci *hci, uint16_t acl_type,
     struct bluetooth_device *dev, struct bt_hci_lc_connect *lc)
@@ -407,14 +402,14 @@ bthci_lc_connect(struct bthci *hci, uint16_t acl_type,
 	if ((err = bthci_enter_cmd(hci)) != 0)
 		return (err);
 #ifdef BTHCI_DEBUG
-	DPRINTF(("%s: bthci_lc_connect(%000X, [#%X, ",
+	DPRINTF(("%s: bthci_lc_connect(%04X, [#%X, ",
 	    DEVNAME(hci), acl_type, dev->unit));
 	for (i = BT_ADDR_LEN; --i >= 0;)
-		DPRINTF(("%0X%c", dev->bt_addr.b[i], (i)?':':','));
-	DPRINTF((" %u, %000x])\n", dev->bt_scan_mode, dev->bt_clock));
+		DPRINTF(("%02X%c", dev->bt_addr.b[i], (i)?':':','));
+	DPRINTF((" %u, %04x])\n", dev->bt_scan_mode, dev->bt_clock));
 #endif /* BTHCI_DEBUG */
 
-	hci->cmd.head.op = htole16(BT_HCI_LC_CONNECT);
+	hci->cmd.head.op = htole16(LC_CONNECT);
 	hci->cmd.head.len = sizeof(*connect);
 	connect = (struct lc_connect *)&hci->cmd.data;
 	for (i = BT_ADDR_LEN; --i >= 0;)
@@ -447,7 +442,7 @@ bthci_lc_connect(struct bthci *hci, uint16_t acl_type,
 	return (err);
 }
 
-#define BT_HCI_LC_DISCONNECT	(BT_HCI_OCF_DISCONNECT|(BT_HCI_OGF_LC<<10))
+#define LC_DISCONNECT		(BT_HCI_OCF_DISCONNECT|(BT_HCI_OGF_LC<<10))
 int
 bthci_lc_disconnect(struct bthci *hci, uint16_t handle,
     struct bt_hci_lc_disconnect *lc)
@@ -461,10 +456,10 @@ bthci_lc_disconnect(struct bthci *hci, uint16_t handle,
 
 	if ((err = bthci_enter_cmd(hci)) != 0)
 		return (err);
-	DPRINTF(("%s: bthci_lc_disconnect(%000X)\n",
+	DPRINTF(("%s: bthci_lc_disconnect(%04X)\n",
 	    DEVNAME(hci), handle));
 
-	hci->cmd.head.op = htole16(BT_HCI_LC_DISCONNECT);
+	hci->cmd.head.op = htole16(LC_DISCONNECT);
 	hci->cmd.head.len = sizeof(*disconnect);
 	disconnect = (struct lc_disconnect *)&hci->cmd.data;
 	disconnect->handle = handle;
@@ -493,7 +488,7 @@ bthci_lc_disconnect(struct bthci *hci, uint16_t handle,
 	return (err);
 }
 
-#define BT_HCI_LC_REMOTE_NAME	(BT_HCI_OCF_REMOTE_NAME|(BT_HCI_OGF_LC<<10))
+#define LC_REMOTE_NAME		(BT_HCI_OCF_REMOTE_NAME|(BT_HCI_OGF_LC<<10))
 int
 bthci_lc_remote_name(struct bthci *hci, struct bluetooth_bdaddr *bdaddr,
     uint8_t mode, uint16_t clock, struct bt_hci_lc_remote_name *lc)
@@ -513,11 +508,11 @@ bthci_lc_remote_name(struct bthci *hci, struct bluetooth_bdaddr *bdaddr,
 	int i;
 	DPRINTF(("%s: bthci_lc_remote_name(", DEVNAME(hci)));
 	for (i = BT_ADDR_LEN; --i >= 0;)
-		DPRINTF(("%0X%c", bdaddr->b[i], (i)?':':' '));
-	DPRINTF((", %u, %x)\n", mode, clock));
+		DPRINTF(("%02X%c", bdaddr->b[i], (i)?':':' '));
+	DPRINTF((", %u, %04x)\n", mode, clock));
 #endif /* BTHCI_DEBUG */
 
-	hci->cmd.head.op = htole16(BT_HCI_LC_REMOTE_NAME);
+	hci->cmd.head.op = htole16(LC_REMOTE_NAME);
 	hci->cmd.head.len = sizeof(*remote_name);
 	remote_name = (struct lc_remote_name *)&hci->cmd.data;
 	memcpy(&remote_name->addr, bdaddr, sizeof(*bdaddr));
@@ -533,7 +528,7 @@ bthci_lc_remote_name(struct bthci *hci, struct bluetooth_bdaddr *bdaddr,
 		goto fail;
 
 	bthci_enter_cmd_async(hci);
-	err = bthci_filter_get(hci, filter,BT_TIMEOUT_REMOTE_NAME,lc,sizeof(*lc));
+	err = bthci_filter_get(hci, filter, BT_TIMEOUT_REMOTE, lc, sizeof(*lc));
 	if (err)
 		goto async_fail;
 	err = BT_ERR_TOH(lc->state);
@@ -554,7 +549,184 @@ bthci_lc_remote_name(struct bthci *hci, struct bluetooth_bdaddr *bdaddr,
 	return (err);
 }
 
-#define BT_HCI_CB_EVENTMASK	(BT_HCI_OCF_EVENTMASK|(BT_HCI_OGF_CB<<10))
+#define LC_REMOTE_FEATURES	(BT_HCI_OCF_REMOTE_FEATURES|(BT_HCI_OGF_LC<<10))
+int
+bthci_lc_remote_features(struct bthci *hci, uint16_t handle,
+    struct bt_hci_features *info)
+{
+	struct bthci_filter *filter;
+	struct bt_hci_lc_remote_features {
+		uint8_t		state;
+		uint16_t	handle;
+		uint8_t		bitmask[BT_FEATURES_BITMASK_LEN];
+	} __packed lc;
+	int err;
+
+	if ((err = bthci_enter_cmd(hci)) != 0)
+		return (err);
+	DPRINTF(("%s: bthci_lc_remote_features(%04X)\n",
+	    DEVNAME(hci), handle));
+
+	hci->cmd.head.op = htole16(LC_REMOTE_FEATURES);
+	hci->cmd.head.len = sizeof(handle);
+	memcpy(&hci->cmd.data, &handle, sizeof(handle));
+
+	if ((filter = bthci_filter_new(hci, BT_EVT_READ_REMOTE_FEATURES_COMPL))
+	    == NULL) {
+		err = ENOMEM;
+		goto fail;
+	}
+	if ((err = bthci_cmd_state(hci)))
+		goto fail;
+
+	bthci_enter_cmd_async(hci);
+	err = bthci_filter_get(hci, filter, BT_TIMEOUT_REMOTE, &lc, sizeof(lc));
+	if (err)
+		goto async_fail;
+	err = BT_ERR_TOH(lc.state);
+	if (err)
+		goto async_fail;
+	if (lc.handle != handle) {
+		printf("%s: bthci_lc_remote_features,"
+		    " handle mismatch, %04X != %04X\n",
+		    DEVNAME(hci), lc.handle, handle);
+		err = EPROTO;
+		goto async_fail;
+	}
+	info->page = 0;
+	info->max_page = 0;
+	memcpy(info->bitmask, lc.bitmask, sizeof(info->bitmask));
+ async_fail:
+	bthci_leave_cmd_async(hci);
+	return (err);
+
+ fail:
+	bthci_leave_cmd(hci);
+	return (err);
+}
+
+#define LC_REMOTE_EFEATURES	(BT_HCI_OCF_REMOTE_EFEATURES|(BT_HCI_OGF_LC<<10))
+int
+bthci_lc_remote_efeatures(struct bthci *hci, uint16_t handle, uint8_t page,
+    struct bt_hci_features *info)
+{
+	struct bthci_filter *filter;
+	struct lc_remote_efeatures {
+		uint16_t	handle;
+		uint8_t		page;
+	} __packed *remote_efeatures;
+	struct bt_hci_lc_remote_efeatures {
+		uint8_t		state;
+		uint16_t	handle;
+		uint8_t		page;
+		uint8_t		max_page;
+		uint8_t		bitmask[BT_FEATURES_BITMASK_LEN];
+	} __packed lc;
+	int err;
+
+	if ((err = bthci_enter_cmd(hci)) != 0)
+		return (err);
+	DPRINTF(("%s: bthci_lc_remote_efeatures(%04X, %d)\n",
+	    DEVNAME(hci), handle, page));
+
+	hci->cmd.head.op = htole16(LC_REMOTE_EFEATURES);
+	hci->cmd.head.len = sizeof(*remote_efeatures);
+	remote_efeatures = (struct lc_remote_efeatures *)&hci->cmd.data;
+	remote_efeatures->handle = handle;
+	remote_efeatures->page = page;
+
+	if ((filter = bthci_filter_new(hci, BT_EVT_READ_REMOTE_EXTENDED_FEATURES))
+	    == NULL) {
+		err = ENOMEM;
+		goto fail;
+	}
+	if ((err = bthci_cmd_state(hci)))
+		goto fail;
+
+	bthci_enter_cmd_async(hci);
+	err = bthci_filter_get(hci, filter, BT_TIMEOUT_REMOTE, &lc, sizeof(lc));
+	if (err)
+		goto async_fail;
+	err = BT_ERR_TOH(lc.state);
+	if (err)
+		goto async_fail;
+	if (lc.handle != handle) {
+		printf("%s: bthci_lc_remote_efeatures,"
+		    " handle mismatch, %04X != %04X\n",
+		    DEVNAME(hci), lc.handle, handle);
+		err = EPROTO;
+		goto async_fail;
+	}
+	info->page = lc.page;
+	info->max_page = lc.max_page;
+	memcpy(info->bitmask, lc.bitmask, sizeof(info->bitmask));
+ async_fail:
+	bthci_leave_cmd_async(hci);
+	return (err);
+
+ fail:
+	bthci_leave_cmd(hci);
+	return (err);
+}
+
+#define LC_REMOTE_VERSION	(BT_HCI_OCF_REMOTE_VERSION|(BT_HCI_OGF_LC<<10))
+int
+bthci_lc_remote_version(struct bthci *hci, uint16_t handle,
+    struct bt_hci_version *info)
+{
+	struct bthci_filter *filter;
+	struct bt_hci_lc_remote_version {
+		uint8_t		state; /* sizeof(bt_hci_version.hci_version) */
+		uint16_t	handle; /* sizeof(bt_hci_version.hci_revision) */
+		uint8_t		lmp_version;
+		uint16_t	bt_manufacturer;
+		uint16_t	lmp_revision;
+	} __packed *lc = (struct bt_hci_lc_remote_version*)info;
+	int err;
+
+	if ((err = bthci_enter_cmd(hci)) != 0)
+		return (err);
+	DPRINTF(("%s: bthci_lc_remote_version(%04X)\n",
+	    DEVNAME(hci), handle));
+
+	hci->cmd.head.op = htole16(LC_REMOTE_VERSION);
+	hci->cmd.head.len = sizeof(handle);
+	memcpy(&hci->cmd.data, &handle, sizeof(handle));
+
+	if ((filter = bthci_filter_new(hci, BT_EVT_READ_REMOTE_VER_INFO_COMPL))
+	    == NULL) {
+		err = ENOMEM;
+		goto fail;
+	}
+	if ((err = bthci_cmd_state(hci)))
+		goto fail;
+
+	bthci_enter_cmd_async(hci);
+	err = bthci_filter_get(hci, filter, BT_TIMEOUT_REMOTE, lc, sizeof(*lc));
+	if (err)
+		goto async_fail;
+	err = BT_ERR_TOH(lc->state);
+	if (err)
+		goto async_fail;
+	if (lc->handle != handle) {
+		printf("%s: bthci_lc_remote_version,"
+		    " handle mismatch, %04X != %04X\n",
+		    DEVNAME(hci), lc->handle, handle);
+		err = EPROTO;
+		goto async_fail;
+	}
+	info->hci_version = 0;
+	info->hci_revision = 0;
+ async_fail:
+	bthci_leave_cmd_async(hci);
+	return (err);
+
+ fail:
+	bthci_leave_cmd(hci);
+	return (err);
+}
+
+#define CB_EVENTMASK		(BT_HCI_OCF_EVENTMASK|(BT_HCI_OGF_CB<<10))
 int
 bthci_cb_reset_event_mask(struct bthci *hci)
 {
@@ -566,7 +738,7 @@ bthci_cb_reset_event_mask(struct bthci *hci)
 	if ((err = bthci_enter_cmd(hci)) != 0)
 		return (err);
 	DPRINTF(("%s: bthci_cb_reset_event_mask\n", DEVNAME(hci)));
-	hci->cmd.head.op = htole16(BT_HCI_CB_EVENTMASK);
+	hci->cmd.head.op = htole16(CB_EVENTMASK);
 	hci->cmd.head.len = sizeof(*event_mask);
 	event_mask = (struct cb_event_mask *)&hci->cmd.data;
 	for (i = 0; i < sizeof(*event_mask); i++)
@@ -576,7 +748,7 @@ bthci_cb_reset_event_mask(struct bthci *hci)
 	return (err);
 }
 
-#define BT_HCI_CB_RESET		(BT_HCI_OCF_RESET|(BT_HCI_OGF_CB<<10))
+#define CB_RESET		(BT_HCI_OCF_RESET|(BT_HCI_OGF_CB<<10))
 int
 bthci_cb_reset(struct bthci *hci)
 {
@@ -584,12 +756,12 @@ bthci_cb_reset(struct bthci *hci)
 	if ((err = bthci_enter_cmd(hci)) != 0)
 		return (err);
 	DPRINTF(("%s: bthci_cb_reset\n", DEVNAME(hci)));
-	err = bthci_cmd_void(hci, NULL, 0, BT_HCI_CB_RESET);
+	err = bthci_cmd_void(hci, NULL, 0, CB_RESET);
 	bthci_leave_cmd(hci);
 	return (err);
 }
 
-#define BT_HCI_CB_NAME		(BT_HCI_OCF_WRITE_NAME|(BT_HCI_OGF_CB<<10))
+#define CB_NAME			(BT_HCI_OCF_WRITE_NAME|(BT_HCI_OGF_CB<<10))
 int
 bthci_cb_name(struct bthci *hci, char *local_name)
 {
@@ -607,7 +779,7 @@ bthci_cb_name(struct bthci *hci, char *local_name)
 		err = EINVAL;
 		goto fail;
 	}
-	hci->cmd.head.op = htole16(BT_HCI_CB_NAME);
+	hci->cmd.head.op = htole16(CB_NAME);
 	hci->cmd.head.len = sizeof(*name);
 	name = (struct cb_name *)&hci->cmd.data;
 	strlcpy((char *)&name->local, local_name, sizeof(name->local));
@@ -619,7 +791,7 @@ bthci_cb_name(struct bthci *hci, char *local_name)
 
 #define BT_HCI_INFO_VERSION	(BT_HCI_OCF_READ_VERSION|(BT_HCI_OGF_INFO<<10))
 int
-bthci_info_version(struct bthci *hci, struct bt_hci_info_version *info)
+bthci_info_version(struct bthci *hci, struct bt_hci_version *info)
 {
 	int err;
 	if ((err = bthci_enter_cmd(hci)) != 0)
@@ -630,7 +802,7 @@ bthci_info_version(struct bthci *hci, struct bt_hci_info_version *info)
 	return (err);
 }
 
-#define BT_HCI_INFO_COMMANDS	(BT_HCI_OCF_READ_COMMANDS|(BT_HCI_OGF_INFO<<10))
+#define INFO_COMMANDS		(BT_HCI_OCF_READ_COMMANDS|(BT_HCI_OGF_INFO<<10))
 int
 bthci_info_commands(struct bthci *hci, struct bt_hci_info_commands *info)
 {
@@ -638,31 +810,31 @@ bthci_info_commands(struct bthci *hci, struct bt_hci_info_commands *info)
 	if ((err = bthci_enter_cmd(hci)) != 0)
 		return (err);
 	DPRINTF(("%s: bthci_info_commands\n", DEVNAME(hci)));
-	err = bthci_cmd_void(hci, info, sizeof(*info), BT_HCI_INFO_COMMANDS);
+	err = bthci_cmd_void(hci, info, sizeof(*info), INFO_COMMANDS);
 	bthci_leave_cmd(hci);
 	return (err);
 }
 
-#define BT_HCI_INFO_FEATURES	(BT_HCI_OCF_READ_FEATURES|(BT_HCI_OGF_INFO<<10))
+#define INFO_FEATURES		(BT_HCI_OCF_READ_FEATURES|(BT_HCI_OGF_INFO<<10))
 int
-bthci_info_features(struct bthci *hci, struct bt_hci_info_features *info)
+bthci_info_features(struct bthci *hci, struct bt_hci_features *info)
 {
 	int err;
 	if ((err = bthci_enter_cmd(hci)) != 0)
 		return (err);
 	DPRINTF(("%s: bthci_info_features\n", DEVNAME(hci)));
-	err = bthci_cmd_void(hci, info, sizeof(*info), BT_HCI_INFO_FEATURES);
+	info->page = 0;
+	info->max_page = 0;
+	err = bthci_cmd_void(hci, &info->bitmask, sizeof(info->bitmask),
+	    INFO_FEATURES);
 	bthci_leave_cmd(hci);
 	return (err);
 }
 
-#define BT_HCI_INFO_EXTENDED	(BT_HCI_OCF_READ_EXTENDED|(BT_HCI_OGF_INFO<<10))
+#define INFO_EFEATURES		(BT_HCI_OCF_READ_EFEATURES|(BT_HCI_OGF_INFO<<10))
 int
-bthci_info_extended(struct bthci *hci, int p, struct bt_hci_info_extended *info)
+bthci_info_efeatures(struct bthci *hci, uint8_t p, struct bt_hci_features *info)
 {
-	struct hci_info_extended {
-		uint8_t page;
-	} * command;
 	int err;
 
 	if ((err = bthci_enter_cmd(hci)) != 0)
@@ -674,15 +846,14 @@ bthci_info_extended(struct bthci *hci, int p, struct bt_hci_info_extended *info)
 		err = (EINVAL);
 		goto fail;
 	}
-	hci->cmd.head.op = htole16(BT_HCI_INFO_EXTENDED);
-	hci->cmd.head.len = sizeof(struct hci_info_extended);
-	command = (struct hci_info_extended *)&hci->cmd.data;
-	command->page = (uint8_t)p;
+	hci->cmd.head.op = htole16(INFO_EFEATURES);
+	hci->cmd.head.len = sizeof(p);
+	hci->cmd.data[0] = p;
 	if ((err = bthci_cmd_complete(hci, info, sizeof(*info))))
 		goto fail;
-	if (info->page != command->page) {
+	if (info->page != p) {
 		printf("%s : bthci_info_extended invalid answer page %d != %d\n",
-		    DEVNAME(hci), info->page, command->page);
+		    DEVNAME(hci), info->page, p);
 		err = EPROTO;
 	}
  fail:
@@ -690,7 +861,7 @@ bthci_info_extended(struct bthci *hci, int p, struct bt_hci_info_extended *info)
 	return (err);
 }
 
-#define BT_HCI_INFO_BUFFER	(BT_HCI_OCF_READ_BUFFER|(BT_HCI_OGF_INFO<<10))
+#define INFO_BUFFER		(BT_HCI_OCF_READ_BUFFER|(BT_HCI_OGF_INFO<<10))
 int
 bthci_info_buffer(struct bthci *hci, struct bt_hci_info_buffer *info)
 {
@@ -698,7 +869,7 @@ bthci_info_buffer(struct bthci *hci, struct bt_hci_info_buffer *info)
 	if ((err = bthci_enter_cmd(hci)) != 0)
 		return (err);
 	DPRINTF(("%s: bthci_info_buffer\n", DEVNAME(hci)));
-	err = bthci_cmd_void(hci, info, sizeof(*info), BT_HCI_INFO_BUFFER);
+	err = bthci_cmd_void(hci, info, sizeof(*info), INFO_BUFFER);
 	if (err == 0) {
 		info->acl_size = le16toh(info->acl_size);
 		info->acl_bufferlen = le16toh(info->acl_bufferlen);
@@ -708,7 +879,7 @@ bthci_info_buffer(struct bthci *hci, struct bt_hci_info_buffer *info)
 	return (err);
 }
 
-#define BT_HCI_INFO_BDADDR	(BT_HCI_OCF_READ_BDADDR|(BT_HCI_OGF_INFO<<10))
+#define INFO_BDADDR		(BT_HCI_OCF_READ_BDADDR|(BT_HCI_OGF_INFO<<10))
 int
 bthci_info_bdaddr(struct bthci *hci, struct bt_hci_info_bdaddr *info)
 {
@@ -716,7 +887,7 @@ bthci_info_bdaddr(struct bthci *hci, struct bt_hci_info_bdaddr *info)
 	if ((err = bthci_enter_cmd(hci)) != 0)
 		return (err);
 	DPRINTF(("%s: bthci_info_bdaddr\n", DEVNAME(hci)));
-	err = bthci_cmd_void(hci, info, sizeof(*info), BT_HCI_INFO_BDADDR);
+	err = bthci_cmd_void(hci, info, sizeof(*info), INFO_BDADDR);
 	bthci_leave_cmd(hci);
 	return (err);
 }
@@ -858,7 +1029,7 @@ bthci_cmd_state(struct bthci *hci)
 		return (EPROTO);
 	}
 	cmd_state = (struct bthci_evt_state *)hci->evt;
-	DPRINTF(("%s: cmd state, op %0000X state %0X\n",
+	DPRINTF(("%s: cmd state, op %04X state %02X\n",
 	    DEVNAME(hci), cmd_state->event.op, cmd_state->event.state));
 	err = BT_ERR_TOH(cmd_state->event.state);
 	pool_put(&hci->evts, hci->evt);
@@ -881,7 +1052,7 @@ bthci_cmd_complete(struct bthci *hci, void *dest, int len)
 		return (EPROTO);
 	}
 	cmd_complete = (struct bthci_evt_complete *)hci->evt;
-	DPRINTF(("%s: cmd complete, op %0000X state %0X\n",
+	DPRINTF(("%s: cmd complete, op %04X state %02X\n",
 	    DEVNAME(hci), cmd_complete->event.op, cmd_complete->event.state));
 	if (cmd_complete->head.len - sizeof(struct bthci_cmd_complete) != len) {
 		if (dest && len)

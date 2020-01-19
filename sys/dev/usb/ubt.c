@@ -70,13 +70,13 @@ struct ubt_softc {
 	struct usbd_xfer	*rx_sco_xfer;
 };
 
-int	ubt_cmd(struct device *, const struct bt_cmd *);
-int	ubt_acl(struct device *, const struct bt_acl *);
-int	ubt_sco(struct device *, const struct bt_sco *);
+int	ubt_tx_cmd(struct device *, const struct bt_cmd *);
+int	ubt_tx_acl(struct device *, const struct bt_acl *);
+int	ubt_tx_sco(struct device *, const struct bt_sco *);
 static struct btbus ubt_bus = {
-	.cmd = ubt_cmd,
-	.acl = ubt_acl,
-	.sco = ubt_sco,
+	.cmd = ubt_tx_cmd,
+	.acl = ubt_tx_acl,
+	.sco = ubt_tx_sco,
 };
 
 int	ubt_match(struct device *, void *, void *);
@@ -87,7 +87,7 @@ void	ubt_close_pipes(struct ubt_softc *);
 int	ubt_malloc_xfers(struct ubt_softc *);
 void	ubt_free_xfers(struct ubt_softc *);
 
-static void	ubt_evt(struct usbd_xfer *, void *, usbd_status);
+static void	ubt_rx_evt(struct usbd_xfer *, void *, usbd_status);
 static int	ubt_rx_acl_start(struct ubt_softc *);
 static void	ubt_rx_acl(struct usbd_xfer *, void *, usbd_status);
 static int	ubt_rx_sco_start(struct ubt_softc *);
@@ -309,7 +309,7 @@ ubt_open_pipes(struct ubt_softc *usc)
 	err = usbd_open_pipe_intr(usc->sc_iface0, UBT_EVT_IN,
 	    USBD_SHORT_XFER_OK, &usc->rx_evt_pipe, usc,
 	    &usc->rx_evt_buf, sizeof(usc->rx_evt_buf),
-	    ubt_evt, USBD_DEFAULT_INTERVAL);
+	    ubt_rx_evt, USBD_DEFAULT_INTERVAL);
 	if (err != USBD_NORMAL_COMPLETION) {
 		printf("%s: could not open intr evt pipe, err=%s\n",
 		    DEVNAME(usc), usbd_errstr(err));
@@ -470,9 +470,9 @@ ubt_free_xfers(struct ubt_softc *usc)
 }
 
 int
-ubt_cmd(struct device *sc, const struct bt_cmd *pkt)
+ubt_tx_cmd(struct device *sc, const struct bt_cmd *pkt)
 {
-	struct ubt_softc	*usc;
+	struct ubt_softc	*usc = (struct ubt_softc *)sc;
 	usb_device_request_t	 req;
 	usbd_status		 err;
 
@@ -481,13 +481,22 @@ ubt_cmd(struct device *sc, const struct bt_cmd *pkt)
 	DUMP_BT_CMD(DEVNAME(usc), pkt);
 #endif
 
-	usc = (struct ubt_softc *)sc;
 	memset(&req, 0, sizeof(req));
 	req.bmRequestType = UT_WRITE_CLASS_DEVICE;
 	USETW(req.wLength, pkt->head.len + sizeof(pkt->head));
-
-	err = usbd_do_request_flags(usc->sc_udev, &req, (void*)pkt,
-	    USBD_FORCE_SHORT_XFER, NULL, USBD_DEFAULT_TIMEOUT);
+	/* XXX short way, better ? */
+	/* err = usbd_do_request_flags(usc->sc_udev, &req, (void*)pkt,
+	    USBD_FORCE_SHORT_XFER, NULL, USBD_DEFAULT_TIMEOUT); */
+	usbd_setup_default_xfer(usc->tx_cmd_xfer,
+	    usc->sc_udev,
+	    NULL,
+	    USBD_DEFAULT_TIMEOUT,
+	    &req,
+	    (void*)pkt,
+	    pkt->head.len + sizeof(pkt->head),
+	    USBD_FORCE_SHORT_XFER|USBD_SYNCHRONOUS,
+	    NULL);
+	err = usbd_transfer(usc->tx_cmd_xfer);
 	if (err == USBD_TIMEOUT)
 		return (EAGAIN);
 	if (err != USBD_NORMAL_COMPLETION) {
@@ -500,23 +509,23 @@ ubt_cmd(struct device *sc, const struct bt_cmd *pkt)
 }
 
 int
-ubt_acl(struct device *sc, const struct bt_acl *pkt)
+ubt_tx_acl(struct device *sc, const struct bt_acl *pkt)
 {
 	/* XXX not implemented yet */
 	return (0);
 }
 
 int
-ubt_sco(struct device *sc, const struct bt_sco *pkt)
+ubt_tx_sco(struct device *sc, const struct bt_sco *pkt)
 {
 	/* XXX not implemented yet */
 	return (0);
 }
 
 static void
-ubt_evt(struct usbd_xfer *xfer, void *priv, usbd_status status)
+ubt_rx_evt(struct usbd_xfer *xfer, void *self, usbd_status status)
 {
-	struct ubt_softc	*usc = priv;
+	struct ubt_softc	*usc = self;
 	struct bt_evt		*evt = &usc->rx_evt_buf;
 	uint32_t		 len;
 
@@ -538,7 +547,7 @@ ubt_evt(struct usbd_xfer *xfer, void *priv, usbd_status status)
 	}
 
 #ifdef UBT_DEBUG
-	DPRINTF(("%s: ubt_evt\n", DEVNAME(usc)));
+	DPRINTF(("%s: ubt_rx_evt\n", DEVNAME(usc)));
 	DUMP_BT_EVT(DEVNAME(usc), evt);
 #endif
 
@@ -562,7 +571,7 @@ ubt_rx_acl_start(struct ubt_softc *usc)
 	    usc->rx_acl_pipe,
 	    usc,
 	    NULL,
-	    sizeof(struct bt_acl),
+	    sizeof(struct bt_acl), /* XXX make it dynamic */
 	    USBD_SHORT_XFER_OK,
 	    USBD_NO_TIMEOUT,
 	    ubt_rx_acl);
@@ -578,10 +587,10 @@ ubt_rx_acl_start(struct ubt_softc *usc)
 static void
 ubt_rx_acl(struct usbd_xfer *xfer, void *self, usbd_status err)
 {
-	struct ubt_softc	*usc;
+	struct ubt_softc	*usc = self;
+	/* XXX struct bt_acl	*acl = &usc->rx_evt_buf;*/
 	uint32_t		 len;
 
-	usc = (struct ubt_softc *)self;
 	if (usbd_is_dying(usc->sc_udev))
 		return;
 	if (xfer == NULL)
@@ -597,8 +606,21 @@ ubt_rx_acl(struct usbd_xfer *xfer, void *self, usbd_status err)
 		goto done;
 	}
 	usbd_get_xfer_status(xfer, NULL, NULL, &len, NULL);
-	DPRINTF(("%s: ubt_rx_acl got %d bytes\n",
-	    DEVNAME(usc), len));
+	/*if (len < sizeof(struct bt_acl_head)) {
+		printf("%s: invalid acl, len %d < minimum %zu\n",
+		    DEVNAME(usc), len, sizeof(struct bt_acl_head));
+		return;
+	}
+	if (len - sizeof(struct bt_acl_head) != acl->head.len) {
+		printf("%s: invalid acl, len mismatch %d != %d\n",
+		    DEVNAME(usc), len, acl->head.len);
+		return;
+	}*/
+
+#ifdef UBT_DEBUG
+	DPRINTF(("%s: ubt_rx_acl received %d bytes\n", DEVNAME(usc), len));
+	/*DUMP_BT_ACL(DEVNAME(usc), acl);*/
+#endif
 done:
 	/* XXX may fail, how to handle it ? */
 	if (ubt_rx_acl_start(usc))

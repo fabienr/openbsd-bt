@@ -198,23 +198,22 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 	struct bluetooth_softc *sc;
 	struct timespec start;
 	union {
+		struct bt_hci_version version;
+		struct bt_hci_features features;
 		struct bt_hci_lc_connect connect;
 		struct bt_hci_lc_disconnect disconnect;
 		struct bt_hci_lc_remote_name remote_name;
 		struct bt_hci_info_bdaddr bdaddr;
-		struct bt_hci_info_version version;
 		struct bt_hci_info_buffer buffer;
-		struct bt_hci_info_features features;
-		struct bt_hci_info_extended extended;
 		struct bt_hci_info_commands commands;
 	} hci;
 	union {
-		struct bluetooth_info *info;
-		struct bluetooth_info_extended *info_ext;
+		struct bluetooth_version *version;
 		struct bluetooth_device_match *match;
 	} ctl;
 	struct bluetooth_device *device;
 	struct bluetooth_device_unit *unit;
+	uint16_t handle;
 	int err = 0, i;
 
 	sc = bluetooth_cd.cd_devs[BLUETOOTHUNIT(dev)];
@@ -222,9 +221,10 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		return (err);
 
 	switch (cmd) {
-	  case DIOCBTINFO: {
-		ctl.info = (struct bluetooth_info *)addr;
-		memset(addr, 0, sizeof(*ctl.info)); /* XXX not required, safer ? */
+	  case DIOCBTVERSION: {
+		ctl.version = (struct bluetooth_version *)addr;
+		/* XXX not required, safer ? */
+		memset(addr, 0, sizeof(*ctl.version));
 
 		bluetooth_out(sc);
 		err = bthci_info_bdaddr(sc->hci, &hci.bdaddr);
@@ -234,8 +234,8 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		}
 		if (err)
 			goto fail;
-		memcpy(&ctl.info->bt_addr, &hci.bdaddr.bdaddr,
-		    sizeof(ctl.info->bt_addr));
+		memcpy(&ctl.version->bt_addr, &hci.bdaddr.bdaddr,
+		    sizeof(ctl.version->bt_addr));
 
 		bluetooth_out(sc);
 		err = bthci_info_version(sc->hci, &hci.version);
@@ -245,11 +245,11 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		}
 		if (err)
 			goto fail;
-		ctl.info->bt_manufacturer = hci.version.bt_manufacturer;
-		ctl.info->hci_version = hci.version.hci_version;
-		ctl.info->hci_revision = hci.version.hci_revision;
-		ctl.info->lmp_version = hci.version.lmp_version;
-		ctl.info->lmp_revision = hci.version.lmp_revision;
+		ctl.version->bt_manufacturer = hci.version.bt_manufacturer;
+		ctl.version->hci_version = hci.version.hci_version;
+		ctl.version->hci_revision = hci.version.hci_revision;
+		ctl.version->lmp_version = hci.version.lmp_version;
+		ctl.version->lmp_revision = hci.version.lmp_revision;
 
 		bluetooth_out(sc);
 		err = bthci_info_buffer(sc->hci, &hci.buffer);
@@ -259,56 +259,72 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		}
 		if (err)
 			goto fail;
-		ctl.info->acl_size = hci.buffer.acl_size;
-		ctl.info->acl_bufferlen = hci.buffer.acl_bufferlen;
-		ctl.info->sco_size = hci.buffer.sco_size;
-		ctl.info->sco_bufferlen = hci.buffer.sco_bufferlen;
-		break;
+		ctl.version->acl_size = hci.buffer.acl_size;
+		ctl.version->acl_bufferlen = hci.buffer.acl_bufferlen;
+		ctl.version->sco_size = hci.buffer.sco_size;
+		ctl.version->sco_bufferlen = hci.buffer.sco_bufferlen;
 
-	} case DIOCBTINFOEXT: {
-		ctl.info_ext = (struct bluetooth_info_extended *)addr;
-		memset(addr, 0, sizeof(*ctl.info_ext)); /* XXX not required, safer ? */
-
+		bluetooth_out(sc);
 		err = bthci_info_features(sc->hci, &hci.features);
+		if (bluetooth_in(sc)) {
+			err = EINTR;
+			goto fail;
+		}
 		if (err)
 			goto fail;
-		memcpy(&ctl.info_ext->features[0][0], &hci.features.bitmask,
-		    sizeof(ctl.info_ext->features[0]));
-		ctl.info_ext->flow_control_lag = 0;
-		ctl.info_ext->flow_control_lag |= (
-		    ctl.info_ext->features[0][2] & (1<<6));
-		ctl.info_ext->flow_control_lag <<= 1;
-		ctl.info_ext->flow_control_lag |= (
-		    ctl.info_ext->features[0][2] & (1<<5));
-		ctl.info_ext->flow_control_lag <<= 1;
-		ctl.info_ext->flow_control_lag |= (
-		    ctl.info_ext->features[0][2] & (1<<4));
-		ctl.info_ext->flow_control_lag <<= 8; /* in unit of 256 bytes */
+		memcpy(&ctl.version->features[0][0], &hci.features.bitmask,
+		    sizeof(ctl.version->features[0]));
+		/* XXX make a function */
+		ctl.version->flow_control_lag = 0;
+		ctl.version->flow_control_lag |= (
+		    ctl.version->features[0][2] & (1<<6));
+		ctl.version->flow_control_lag <<= 1;
+		ctl.version->flow_control_lag |= (
+		    ctl.version->features[0][2] & (1<<5));
+		ctl.version->flow_control_lag <<= 1;
+		ctl.version->flow_control_lag |= (
+		    ctl.version->features[0][2] & (1<<4));
+		ctl.version->flow_control_lag <<= 8; /* in unit of 256 bytes */
 
-		err = bthci_info_extended(sc->hci, 0, &hci.extended);
+		bluetooth_out(sc);
+		err = bthci_info_efeatures(sc->hci, 0, &hci.features);
+		if (bluetooth_in(sc)) {
+			err = EINTR;
+			goto fail;
+		}
 		if (err)
 			goto fail;
-		i = hci.extended.max_page;
+		i = hci.features.max_page;
 		if (i > BT_EXTENDED_PAGE_MAX) {
 			printf("%s : invalid maximum page number %d > %d\n",
 			    DEVNAME(sc), i, BT_EXTENDED_PAGE_MAX);
 			i = BT_EXTENDED_PAGE_MAX;
 		}
 		while(i) {
-			err = bthci_info_extended(sc->hci, i, &hci.extended);
+			bluetooth_out(sc);
+			err = bthci_info_efeatures(sc->hci, i, &hci.features);
+			if (bluetooth_in(sc)) {
+				err = EINTR;
+				goto fail;
+			}
 			if (err)
 				break;
-			memcpy(&ctl.info_ext->features[i][0],
-			    &hci.extended.bitmask,
-			    sizeof(ctl.info_ext->features[i]));
+			memcpy(&ctl.version->features[i][0],
+			    &hci.features.bitmask,
+			    sizeof(ctl.version->features[i]));
 			i--;
 		}
 
+		bluetooth_out(sc);
 		err = bthci_info_commands(sc->hci, &hci.commands);
+		if (bluetooth_in(sc)) {
+			err = EINTR;
+			goto fail;
+		}
 		if (err)
 			goto fail;
-		memcpy(&ctl.info_ext->commands, &hci.commands.bitmask,
-		    sizeof(ctl.info_ext->commands));
+		memcpy(&ctl.version->commands, &hci.commands.bitmask,
+		    sizeof(ctl.version->commands));
 		break;
 
 	} case DIOCBTINQUIRY: {
@@ -361,16 +377,22 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		if (ctl.match->unit > 0)
 			device = bluetooth_device_unit(sc, ctl.match->unit);
 		else
-			device = bluetooth_device_loockup(sc, &ctl.match->bt_addr);
+			device = bluetooth_device_loockup(sc,&ctl.match->bt_addr);
 		if (device == NULL) {
 			err = EINVAL;
 			goto fail;
 		}
 
+		/* XXX not required, safer ? */
+		memset(addr, 0, sizeof(*ctl.match));
+		ctl.match->unit = device->unit;
+		memcpy(&ctl.match->bt_addr, &device->bt_addr,
+		    sizeof(ctl.match->bt_addr));
+
+		/* enter connect state and establich a link handle */
 		/* XXX make a function */
 		sc->state = BT_STATE_CONNECT;
 		wakeup(sc);
-
 		bluetooth_out(sc);
 		err = bthci_lc_connect(sc->hci, sc->acl_type, device,
 		    &hci.connect);
@@ -380,20 +402,85 @@ bluetoothioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		}
 		if (err)
 			goto fail;
-
 		/* XXX make a function */
 		sc->state = BT_STATE_DEVOPEN;
 		wakeup(sc);
 		err = bluetooth_rxfifo_readerr(sc);
 		if (err)
 			goto fail;
+		handle = hci.connect.handle;
 
-		/* perform SDP */
+		/* remote device LMP informations : versions and features */
+		bluetooth_out(sc);
+		err = bthci_lc_remote_version(sc->hci, handle, &hci.version);
+		if (bluetooth_in(sc)) {
+			err = EINTR;
+			goto fail;
+		}
+		if (err)
+			goto fail;
+		ctl.match->bt_manufacturer = hci.version.bt_manufacturer;
+		ctl.match->lmp_version = hci.version.lmp_version;
+		ctl.match->lmp_revision = hci.version.lmp_revision;
+
+		bluetooth_out(sc);
+		err = bthci_lc_remote_features(sc->hci, handle, &hci.features);
+		if (bluetooth_in(sc)) {
+			err = EINTR;
+			goto fail;
+		}
+		if (err)
+			goto fail;
+		memcpy(&ctl.match->features[0][0], &hci.features.bitmask,
+		    sizeof(ctl.match->features[0]));
+		/* XXX make a function */
+		ctl.match->flow_control_lag = 0;
+		ctl.match->flow_control_lag |= (
+		    ctl.match->features[0][2] & (1<<6));
+		ctl.match->flow_control_lag <<= 1;
+		ctl.match->flow_control_lag |= (
+		    ctl.match->features[0][2] & (1<<5));
+		ctl.match->flow_control_lag <<= 1;
+		ctl.match->flow_control_lag |= (
+		    ctl.match->features[0][2] & (1<<4));
+		ctl.match->flow_control_lag <<= 8; /* in unit of 256 bytes */
+
+		bluetooth_out(sc);
+		err = bthci_lc_remote_efeatures(sc->hci, handle, 0,
+		    &hci.features);
+		if (bluetooth_in(sc)) {
+			err = EINTR;
+			goto fail;
+		}
+		if (err)
+			goto fail;
+		i = hci.features.max_page;
+		if (i > BT_EXTENDED_PAGE_MAX) {
+			printf("%s : invalid maximum page number %d > %d\n",
+			    DEVNAME(sc), i, BT_EXTENDED_PAGE_MAX);
+			i = BT_EXTENDED_PAGE_MAX;
+		}
+		while(i) {
+			bluetooth_out(sc);
+			err = bthci_lc_remote_efeatures(sc->hci, handle, i,
+			    &hci.features);
+			if (bluetooth_in(sc)) {
+				err = EINTR;
+				goto fail;
+			}
+			if (err)
+				break;
+			memcpy(&ctl.match->features[i][0],
+			    &hci.features.bitmask,
+			    sizeof(ctl.match->features[i]));
+			i--;
+		}
+
+		/* establich a logical link handle and perform SDP */
 
 		/* disconnect remote device */
 		bluetooth_out(sc);
-		err = bthci_lc_disconnect(sc->hci, hci.connect.handle,
-		    &hci.disconnect);
+		err = bthci_lc_disconnect(sc->hci, handle, &hci.disconnect);
 		if (bluetooth_in(sc)) {
 			err = EINTR;
 			goto fail;
@@ -468,6 +555,7 @@ bluetooth_kthread(void *priv)
 				err = bluetooth_connect(sc, evt);
 				break;
 			default:
+				DUMP_BT_EVT(DEVNAME(sc), evt);
 				err = EPROTO;
 			}
 			if (err < 0) {
@@ -476,7 +564,7 @@ bluetooth_kthread(void *priv)
 			}
 			bthci_pool_put(sc->hci, evt);
 			if (err)
-				goto state_done;
+				goto state_done; /* abort state, report error */
 		}
 		rwsleep_nsec(sc, &sc->lock, BTPRI, DEVNAME(sc), INFSLP);
 		if (sc->state == BT_STATE_DYING) /* dying */
@@ -492,7 +580,7 @@ bluetooth_kthread(void *priv)
  state_done:
 		DPRINTF(("%s: kthread state %d done, sc state %d, err %d\n",
 		    DEVNAME(sc), state, sc->state, err));
-		if (sc->state > BT_STATE_DEVOPEN)
+		if (sc->state >= BT_STATE_DEVOPEN)
 			state = sc->state = BT_STATE_DEVOPEN;
 		if (bluetooth_rxfifo_write(sc, NULL, 0, err) == ENOMEM)
 			printf("%s: kthread rxfifo_write ENOMEM\n",
@@ -508,7 +596,7 @@ bluetooth_kthread(void *priv)
 int
 bluetooth_init(struct bluetooth_softc *sc)
 {
-	struct bt_hci_info_features features;
+	struct bt_hci_features features;
 	int err;
 
 	bluetooth_leave(sc);
@@ -728,7 +816,7 @@ bluetooth_device_loockup(struct bluetooth_softc *sc,
 #ifdef BT_DEBUG
 	printf("%s: loockup ", DEVNAME(sc));
 	for (i = BT_ADDR_LEN; --i >= 0;)
-		printf("%0X%c", bdaddr->b[i], (i)?':':' ');
+		printf("%02X%c", bdaddr->b[i], (i)?':':' ');
 	printf("\n");
 #endif
 	SLIST_FOREACH(dev, &sc->devices, sl) {
@@ -750,7 +838,7 @@ bluetooth_device_new(struct bluetooth_softc *sc, struct bluetooth_bdaddr *bdaddr
 	int i;
 	printf("%s: new ", DEVNAME(sc));
 	for (i = BT_ADDR_LEN; --i >= 0;)
-		printf("%0X%c", bdaddr->b[i], (i)?':':' ');
+		printf("%02X%c", bdaddr->b[i], (i)?':':' ');
 	printf("\n");
 #endif
 	dev = malloc(sizeof(*dev), M_BLUETOOTH, M_WAITOK|M_CANFAIL|M_ZERO);

@@ -30,9 +30,17 @@
 		printf(" %02x", (evt)->data[i]);				\
 	printf("\n");								\
 } while(0)
+#define DUMP_BT_ACL(devname, acl) do {						\
+	printf("%s: acl head(h_f=%04X, len=%d), data",				\
+	    (devname), (acl)->head.h_f, (acl)->head.len);			\
+	for (int i = 0; i < (acl)->head.len; i++)				\
+		printf(" %02x", (acl)->data[i]);				\
+	printf("\n");								\
+} while(0)
 #else
-#define DUMP_BT_EVT(hci, evt)
-#define DUMP_BT_CMD(hci, evt)
+#define DUMP_BT_EVT(devname, evt)
+#define DUMP_BT_CMD(devname, evt)
+#define DUMP_BT_ACL(devname, acl)
 #endif
 
 /* Bluetooth Link Control commands */
@@ -41,6 +49,9 @@
 #define BT_HCI_OCF_CONNECTION		0x0005
 #define BT_HCI_OCF_DISCONNECT		0x0006
 #define BT_HCI_OCF_REMOTE_NAME		0x0019
+#define BT_HCI_OCF_REMOTE_FEATURES	0x001B
+#define BT_HCI_OCF_REMOTE_EFEATURES	0x001C
+#define BT_HCI_OCF_REMOTE_VERSION	0x001D
 /* Bluetooth Link Policy commands */
 #define BT_HCI_OGF_LP			0x02
 /* Bluetooth Controller & Baseband commands */
@@ -53,13 +64,13 @@
 #define BT_HCI_OCF_READ_VERSION		0x0001
 #define BT_HCI_OCF_READ_COMMANDS	0x0002
 #define BT_HCI_OCF_READ_FEATURES	0x0003
-#define BT_HCI_OCF_READ_EXTENDED	0x0004
+#define BT_HCI_OCF_READ_EFEATURES	0x0004
 #define BT_HCI_OCF_READ_BUFFER		0x0005
 #define BT_HCI_OCF_READ_BDADDR		0x0009
 /* Bluetooth Status parameters */
 #define BT_HCI_OGF_STAT			0x05
 
-/* Bluetooth feature bitmask byte description */
+/* Bluetooth feature bitmask byte description for packet type negociation */
 #define BT_HCI_FEATURE_0_3SLOT		(1<<0)
 #define BT_HCI_FEATURE_0_5SLOT		(1<<1)
 #define BT_HCI_FEATURE_1_SC0		(1<<3)
@@ -75,6 +86,12 @@
 #define BT_HCI_FEATURE_5_EDRSCO2MBPS	(1<<5)
 #define BT_HCI_FEATURE_5_EDRSCO3MBPS	(1<<6)
 #define BT_HCI_FEATURE_5_3SLOTSEDRSCO	(1<<7)
+
+/* Bluetooth inquiry LAP code */
+#define BT_HCI_INQUIRY_LAP_2		0x9E
+#define BT_HCI_INQUIRY_LAP_1		0x8B
+#define BT_HCI_INQUIRY_LAP_GIAC_0	0x33
+#define BT_HCI_INQUIRY_LAP_LIAC_0	0x00 /* XXX not used */
 
 /* bt hci cmd packet, header 3, data max 255, total 258 bytes */
 struct bt_cmd_head {
@@ -185,7 +202,7 @@ struct bt_acl_head {
 } __packed;
 struct bt_acl {
 	struct bt_acl_head	head;
-	uint8_t			data[27];
+	uint8_t			data[27]; /* XXX minimum/only lenght in spec */
 } __packed;
 
 /* SCO Packet types bitmask which may be used for "Setup Synchronous Connection" */

@@ -108,8 +108,7 @@ struct bluetooth_class {
 	uint8_t		c[3];
 };
 
-/* XXX rename into _version, implement btconfig -v (version) -vv (_extended) */
-struct bluetooth_info {
+struct bluetooth_version {
 	struct bluetooth_bdaddr	bt_addr;
 	uint16_t	bt_manufacturer; /* see btstrings.c */
 	uint8_t		hci_version; /* see btstrings.c */
@@ -120,18 +119,13 @@ struct bluetooth_info {
 	int		acl_bufferlen;
 	int		sco_size;
 	int		sco_bufferlen;
-};
-#define DIOCBTINFO	_IOR('B', 1, struct bluetooth_info)
-
-struct bluetooth_info_extended {
 	int		flow_control_lag; /* in bytes */
-	uint8_t		features[BT_EXTENDED_PAGE_MAX][BT_FEATURES_BITMASK_LEN];
-	uint8_t		commands[BT_COMMANDS_BITMASK_LEN]; /* see btstrings.c */
+	uint8_t features[BT_EXTENDED_PAGE_MAX][BT_FEATURES_BITMASK_LEN];
+	uint8_t commands[BT_COMMANDS_BITMASK_LEN]; /* see btstrings.c */
 };
-#define DIOCBTINFOEXT	_IOR('B', 2, struct bluetooth_info_extended)
+#define DIOCBTVERSION	_IOR('B', 1, struct bluetooth_version)
 
 /* parameter void */
-#define DIOCBTINQUIRY	_IO('B', 3)
 /* data to be read after */
 struct bluetooth_device {
 	uint8_t			unit;
@@ -141,12 +135,19 @@ struct bluetooth_device {
 	struct bluetooth_class	bt_class;
 	uint16_t		bt_clock;
 	char			name[248]; /* XXX see BT_EVT_MAX_PAYLOAD */
+	uint16_t		handle;
 };
+#define DIOCBTINQUIRY	_IO('B', 2)
 
 struct bluetooth_device_match {
 	uint8_t			unit;
 	struct bluetooth_bdaddr	bt_addr;
+	uint16_t		bt_manufacturer; /* see btstrings.c */
+	uint8_t			lmp_version; /* see btstrings.c */
+	int			lmp_revision;
+	int			flow_control_lag; /* in bytes */
+	uint8_t features[BT_EXTENDED_PAGE_MAX][BT_FEATURES_BITMASK_LEN];
 };
-#define DIOCBTMATCH	_IOW('B', 4, struct bluetooth_device_match)
+#define DIOCBTMATCH	_IOWR('B', 3, struct bluetooth_device_match)
 
 #endif /* _NET_BLUETOOTH_H_ */

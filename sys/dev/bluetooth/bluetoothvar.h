@@ -21,7 +21,7 @@
 #define BT_TIMEOUT_INQUIRY	SEC_TO_NSEC(5)
 #define BT_TIMEOUT_CONNECT	SEC_TO_NSEC(5) /* XXX to check */
 #define BT_TIMEOUT_DISCONNECT	SEC_TO_NSEC(5) /* XXX to check */
-#define BT_TIMEOUT_REMOTE_NAME	SEC_TO_NSEC(5) /* XXX to check */
+#define BT_TIMEOUT_REMOTE	SEC_TO_NSEC(5) /* XXX to check */
 #define BT_STATE_INIT		0
 #define BT_STATE_DYING		1
 #define BT_STATE_WAITING	2
@@ -53,8 +53,10 @@ SIMPLEQ_HEAD(bluetooth_ios, bluetooth_io);
 struct bluetooth_device_unit {
 	struct bluetooth_device			unit;
 	SLIST_ENTRY(bluetooth_device_unit)	sl;
+	LIST_ENTRY(bluetooth_device_unit)	handleh;
 };
 SLIST_HEAD(bluetooth_device_units, bluetooth_device_unit);
+LIST_HEAD(bluetooth_device_handles, bluetooth_device_unit);
 
 struct bluetooth_softc {
 	struct device			 sc_dev;
