@@ -121,7 +121,8 @@
 #define	M_EXEC		63	/* argument lists & other mem used by exec */
 #define	M_MISCFSMNT	64	/* miscfs mount structures */
 #define	M_FUSEFS	65	/* fusefs mount structures */
-/* 66-73 - free */
+#define	M_BLUETOOTH	66	/* Bluetooth structures */
+/* 67-73 - free */
 #define	M_PFKEY		74	/* pfkey data */
 #define	M_TDB		75	/* Transforms database */
 #define	M_XDATA		76	/* IPsec data */
@@ -250,7 +251,7 @@
 	"exec",		/* 63 M_EXEC */ \
 	"miscfs mount",	/* 64 M_MISCFSMNT */ \
 	"fusefs mount", /* 65 M_FUSEFS */ \
-	NULL, \
+	"bluetooth",	/* 66 M_BLUETOOTH */ \
 	NULL, \
 	NULL, \
 	NULL, \

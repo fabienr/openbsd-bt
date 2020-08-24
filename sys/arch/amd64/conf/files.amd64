@@ -215,6 +215,11 @@ file	arch/amd64/amd64/nvram.c	nvram needs-flag
 include	"dev/hid/files.hid"
 
 #
+# Bluetooth (BT)
+#
+include	"dev/bluetooth/files.bluetooth"
+
+#
 # USB
 #
 include	"dev/usb/files.usb"

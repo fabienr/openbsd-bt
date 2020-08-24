@@ -444,9 +444,14 @@ define	pcmciabus {[controller = -1], [socket = -1]}	# PCMCIA attachment
 define	cbbus {[slot = -1]}		# CardBus attachment
 define	pcmciaslot {[slot = -1]}	# PCMCIA slot itself
 define	sdmmcbus {}			# SD/MMC attachment
-define	btbus {}			# Bluetooth host controller
+define	btbus {}			# Bluetooth attachment
 define	agpbus {}			# AGP bridge
 device	virtio {}			# VirtIO
+
+# Bluetooth (BT) controller
+device	bluetooth
+file	dev/bluetooth/bluetooth.c	bluetooth	needs-flag
+file	bluetooth/bthci.c		bluetooth
 
 # UHCI USB controller
 device	uhci: usbus
@@ -1056,4 +1061,3 @@ file lib/libz/zutil.c			ppp_deflate | ipsec | crypto
 file lib/libz/zopenbsd.c		ppp_deflate | ipsec | crypto
 file lib/libz/trees.c			ppp_deflate | ipsec | crypto
 file lib/libz/compress.c		ppp_deflate | ipsec | crypto
-

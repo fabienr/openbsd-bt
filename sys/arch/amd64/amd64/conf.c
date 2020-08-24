@@ -149,6 +149,7 @@ cdev_decl(cy);
 #include "pctr.h"
 #include "bktr.h"
 #include "ksyms.h"
+#include "bluetooth.h"
 #include "usb.h"
 #include "uhid.h"
 #include "fido.h"
@@ -299,6 +300,7 @@ struct cdevsw	cdevsw[] =
 	cdev_ipmi_init(NIPMI,ipmi),	/* 96: ipmi */
 	cdev_switch_init(NSWITCH,switch), /* 97: switch(4) control interface */
 	cdev_fido_init(NFIDO,fido),	/* 98: FIDO/U2F security keys */
+	cdev_bluetooth_init(NBLUETOOTH,bluetooth), /* 99: Bluetooth controler */
 };
 int	nchrdev = nitems(cdevsw);
 

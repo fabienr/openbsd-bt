@@ -153,6 +153,7 @@ target(all, asc, 0)dnl
 target(all, radio, 0)dnl
 target(all, tuner, 0)dnl
 target(all, rmidi, 0, 1, 2, 3, 4, 5, 6, 7)dnl
+target(all, btall)dnl
 target(all, uall)dnl
 target(all, pci, 0, 1, 2, 3)dnl
 twrget(all, wsmouse, wscons)dnl
@@ -175,6 +176,12 @@ dnl
 dnl XXX some arches use ramd, others ramdisk - needs to be fixed eventually
 __devitem(ramdisk, ramdisk, Ramdisk kernel devices,nothing)dnl
 dnl
+target(bluetooth, bluetooth, 0, 1, 2, 3, 4)dnl
+dnl
+__devitem({-btall-}, btall, All Bluetooth devices,bluetooth)dnl
+_mkdev(btall, btall, {-dnl
+show_target({-bluetooth-})dnl
+-})dnl
 target(usb, usb, 0, 1, 2, 3, 4, 5, 6, 7)dnl
 target(usb, uhid, 0, 1, 2, 3, 4, 5, 6, 7)dnl
 twrget(usb, fido, fido)dnl
@@ -352,6 +359,10 @@ _mkdev(lpt, lpt*|lpa*,
 	esac
 	M $n$U c major_lpt_c Add($U, $f) 600-})dnl
 __devitem(lpa, lpa*, Polled printer port,lpt)dnl
+__devtitle({-bluetooth-}, Bluetooth devices)dnl
+__devitem({-bluetooth-}, bluetooth*, BT controlers devices used by btconfig)dnl
+_mkdev({-bluetooth-}, bluetooth*, {-[ "$i" = "bluetooth" ] && u= || u=$U
+	M bluetooth$u c major_bluetooth_c $U 640-})dnl
 __devtitle({-usb-}, USB devices)dnl
 __devitem({-usb-}, usb*, Bus control devices used by usbd for attach/detach)dnl
 _mkdev({-usb-}, usb*, {-[ "$i" = "usb" ] && u= || u=$U

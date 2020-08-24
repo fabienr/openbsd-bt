@@ -25,6 +25,10 @@ attach	uhub at uhub with uhub_uhub
 # Modem and com serial port "bus"
 define	ucombus {[portno = -1]}
 
+# Bluetooth devices
+attach	bluetooth at uhub with ubt
+file	dev/usb/ubt.c			ubt
+
 # Audio devices
 device	uaudio: audio
 attach	uaudio at uhub
